@@ -12,14 +12,14 @@ from pathlib import Path
 
 import pdfplumber
 import fitz  # PyMuPDF
-import anthropic
+from groq import AsyncGroq
 
 from backend.config import settings
 from backend.schemas.candidate import CandidateProfile, EmploymentProfile, SkillProfile
 from backend.schemas.education import EducationProfile, SSERecord, HSERecord, DegreeRecord
 from backend.schemas.research import ResearchProfile, JournalPaper, ConferencePaper
 
-client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+client = AsyncGroq(api_key=settings.groq_api_key)
 
 EXTRACTION_SYSTEM_PROMPT = """You are a precise CV data extractor for an academic HR system.
 
@@ -122,14 +122,18 @@ async def extract_cv(pdf_path: str) -> CandidateProfile:
     raw_text = extract_raw_text(pdf_path)
     filename = Path(pdf_path).name
 
-    response = await client.messages.create(
+    response = await client.chat.completions.create(
         model=settings.extraction_model,
         max_tokens=4096,
-        system=EXTRACTION_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": f"Extract all information from this CV:\n\n{raw_text}"}]
+        temperature=0.1,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Extract all information from this CV:\n\n{raw_text}"}
+        ]
     )
 
-    raw_json = response.content[0].text.strip()
+    raw_json = response.choices[0].message.content.strip()
     if raw_json.startswith("```"):
         raw_json = raw_json.split("```")[1]
         if raw_json.startswith("json"):
