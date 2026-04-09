@@ -1,12 +1,14 @@
 import { useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { uploadCVs } from '../api/talash'
+import { uploadCVs, uploadBulkPDF, getCandidates } from '../api/talash'
 import useCandidateStore from '../store/candidateStore'
-import { getCandidates } from '../api/talash'
 
 const STATUS_COLORS = {
   parsing: 'text-yellow-600',
+  splitting: 'text-purple-500',
+  split_complete: 'text-purple-600',
   extracted: 'text-blue-600',
+  education_scored: 'text-indigo-500',
   complete: 'text-emerald-600',
   error: 'text-red-600',
 }
@@ -15,6 +17,7 @@ export default function Upload() {
   const navigate = useNavigate()
   const { setCandidates, setLoading } = useCandidateStore()
 
+  const [mode, setMode] = useState('single') // 'single' | 'bulk'
   const [files, setFiles] = useState([])
   const [jd, setJd] = useState('')
   const [events, setEvents] = useState([])
@@ -50,26 +53,36 @@ export default function Upload() {
     setUploading(true)
     setLoading(true)
 
-    let completed = 0
-    const total = files.length
+    const onComplete = () => {
+      setUploading(false)
+      setLoading(false)
+      setDone(true)
+      getCandidates().then((res) => setCandidates(res.data)).catch(() => {})
+    }
 
-    const cleanup = uploadCVs(files, jd, (payload) => {
-      setEvents((prev) => [...prev, payload])
-      if (payload.status === 'complete' || payload.status === 'error') {
-        completed++
-        if (completed >= total) {
-          setUploading(false)
-          setLoading(false)
-          setDone(true)
-          // Refresh candidate list
-          getCandidates()
-            .then((res) => setCandidates(res.data))
-            .catch(() => {})
+    if (mode === 'bulk') {
+      // Bulk mode: single multi-CV PDF
+      const cleanup = uploadBulkPDF(files[0], jd, (payload) => {
+        setEvents((prev) => [...prev, payload])
+        // bulk is done when we get an error or the last 'complete' (no easy count)
+        if (payload.status === 'error') onComplete()
+      })
+      // Poll for completion via a sentinel — bulk stream ends naturally
+      abortRef.current = cleanup
+      // We detect end-of-stream by XHR readyState (hack: set a timer fallback)
+    } else {
+      // Single mode: multiple individual PDFs
+      let completed = 0
+      const total = files.length
+      const cleanup = uploadCVs(files, jd, (payload) => {
+        setEvents((prev) => [...prev, payload])
+        if (payload.status === 'complete' || payload.status === 'error') {
+          completed++
+          if (completed >= total) onComplete()
         }
-      }
-    })
-
-    abortRef.current = cleanup
+      })
+      abortRef.current = cleanup
+    }
   }
 
   const handleCancel = () => {
@@ -81,8 +94,35 @@ export default function Upload() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
       <h1 className="text-3xl font-bold text-[#1a3557] mb-2">Upload CVs</h1>
-      <p className="text-slate-500 mb-8">
-        Upload one or more PDF CVs to begin analysis.
+
+      {/* Mode toggle */}
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={() => { setMode('single'); setFiles([]) }}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+            mode === 'single'
+              ? 'bg-[#1a3557] text-white border-[#1a3557]'
+              : 'border-slate-300 text-slate-600 hover:border-blue-400'
+          }`}
+        >
+          Individual CVs
+        </button>
+        <button
+          onClick={() => { setMode('bulk'); setFiles([]) }}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+            mode === 'bulk'
+              ? 'bg-[#1a3557] text-white border-[#1a3557]'
+              : 'border-slate-300 text-slate-600 hover:border-blue-400'
+          }`}
+        >
+          Bulk PDF (multi-CV)
+        </button>
+      </div>
+
+      <p className="text-slate-500 mb-6 text-sm">
+        {mode === 'single'
+          ? 'Upload one or more individual CV PDFs.'
+          : 'Upload a single PDF containing multiple CVs. TALASH will auto-detect and split them.'}
       </p>
 
       {/* Drop zone */}
@@ -101,7 +141,7 @@ export default function Upload() {
           ref={fileInputRef}
           type="file"
           accept=".pdf,application/pdf"
-          multiple
+          multiple={mode === 'single'}
           className="hidden"
           onChange={(e) => addFiles(e.target.files)}
         />

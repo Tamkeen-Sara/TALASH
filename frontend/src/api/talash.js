@@ -56,4 +56,35 @@ export const uploadCVs = (files, jd, onEvent) => {
   return () => xhr.abort()
 }
 
+/**
+ * Upload a single multi-CV PDF via SSE bulk endpoint.
+ */
+export const uploadBulkPDF = (file, jd, onEvent) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('jd', jd || '')
+
+  const xhr = new XMLHttpRequest()
+  xhr.open('POST', '/api/upload/bulk')
+  let buffer = ''
+
+  xhr.onprogress = () => {
+    buffer += xhr.responseText.slice(buffer.length)
+    const lines = buffer.split('\n')
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const payload = JSON.parse(line.slice(6))
+          onEvent(payload)
+        } catch {
+          // partial chunk
+        }
+      }
+    }
+  }
+
+  xhr.send(formData)
+  return () => xhr.abort()
+}
+
 export default api
