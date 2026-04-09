@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+:root {
+  --talash-navy: #1a3557;
+  --talash-blue: #2563eb;
+  --talash-light: #e8f0fe;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+#root {
+  min-height: 100vh;
+}
