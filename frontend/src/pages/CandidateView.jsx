@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { getCandidate, addSupervision, downloadReport } from '../api/talash'
 import ScoreRadar from '../components/ScoreRadar'
 import TimelineChart from '../components/TimelineChart'
+import JsonViewer from '../components/JsonViewer'
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
@@ -142,7 +143,7 @@ export default function CandidateView() {
     )
   }
 
-  const tabs = ['overview', 'research', 'education', 'employment', 'supervision']
+  const tabs = ['overview', 'research', 'education', 'employment', 'supervision', 'raw data']
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -411,6 +412,13 @@ export default function CandidateView() {
           </div>
           <SupervisionForm candidateId={id} onAdded={fetchCandidate} />
         </div>
+      )}
+
+      {tab === 'raw data' && (
+        <JsonViewer
+          data={candidate}
+          title={`Extracted JSON — ${candidate.full_name}`}
+        />
       )}
     </div>
   )
