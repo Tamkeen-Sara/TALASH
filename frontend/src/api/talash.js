@@ -22,9 +22,39 @@ export const downloadReport = (id) =>
   api.get(`/report/${id}`, { responseType: 'blob' })
 
 /**
- * Upload CVs via SSE stream.
- * onEvent(event) is called for each SSE message.
- * Returns a cleanup function.
+ * Parse SSE events from an XHR stream without duplicates.
+ * SSE events are separated by \n\n — we split on that boundary
+ * and keep any incomplete trailing event in the buffer for next tick.
+ */
+function makeSseParser(onEvent) {
+  let buffer = ''
+  let processedLength = 0
+
+  return function onProgress(responseText) {
+    buffer += responseText.slice(processedLength)
+    processedLength = responseText.length
+
+    // Split on SSE event separator \n\n — keeps partial last event
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop() // last part may be incomplete
+
+    for (const part of parts) {
+      for (const line of part.split('\n')) {
+        if (line.startsWith('data: ')) {
+          try {
+            onEvent(JSON.parse(line.slice(6)))
+          } catch {
+            // malformed JSON — skip
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Upload individual CV PDFs via SSE stream.
+ * Returns a cleanup (abort) function.
  */
 export const uploadCVs = (files, jd, onEvent) => {
   const formData = new FormData()
@@ -35,29 +65,15 @@ export const uploadCVs = (files, jd, onEvent) => {
 
   const xhr = new XMLHttpRequest()
   xhr.open('POST', '/api/upload')
-  let buffer = ''
-
-  xhr.onprogress = () => {
-    buffer += xhr.responseText.slice(buffer.length)
-    const lines = buffer.split('\n')
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try {
-          const payload = JSON.parse(line.slice(6))
-          onEvent(payload)
-        } catch {
-          // partial chunk — wait for next progress
-        }
-      }
-    }
-  }
-
+  const parse = makeSseParser(onEvent)
+  xhr.onprogress = () => parse(xhr.responseText)
   xhr.send(formData)
   return () => xhr.abort()
 }
 
 /**
  * Upload a single multi-CV PDF via SSE bulk endpoint.
+ * Returns a cleanup (abort) function.
  */
 export const uploadBulkPDF = (file, jd, onEvent) => {
   const formData = new FormData()
@@ -66,23 +82,8 @@ export const uploadBulkPDF = (file, jd, onEvent) => {
 
   const xhr = new XMLHttpRequest()
   xhr.open('POST', '/api/upload/bulk')
-  let buffer = ''
-
-  xhr.onprogress = () => {
-    buffer += xhr.responseText.slice(buffer.length)
-    const lines = buffer.split('\n')
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try {
-          const payload = JSON.parse(line.slice(6))
-          onEvent(payload)
-        } catch {
-          // partial chunk
-        }
-      }
-    }
-  }
-
+  const parse = makeSseParser(onEvent)
+  xhr.onprogress = () => parse(xhr.responseText)
   xhr.send(formData)
   return () => xhr.abort()
 }

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 from .education import EducationProfile
 from .research import ResearchProfile
@@ -16,6 +16,18 @@ class EmploymentRecord(BaseModel):
     responsibilities: list[str] = []
     seniority_score: Optional[int] = None  # computed: professor=10, intern=1
     raw_text: str = ""
+
+    @field_validator("raw_text", mode="before")
+    @classmethod
+    def coerce_none_str(cls, v):
+        return v if v is not None else ""
+
+    @field_validator("is_current", "responsibilities", mode="before")
+    @classmethod
+    def coerce_none_defaults(cls, v, info):
+        if v is None:
+            return False if info.field_name == "is_current" else []
+        return v
 
 
 class EmploymentProfile(BaseModel):
