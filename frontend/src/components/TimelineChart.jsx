@@ -25,7 +25,7 @@ export default function TimelineChart({ candidate }) {
   const minYear = Math.min(...records.map((r) => r.start_year || 2000))
 
   const data = records.map((r, i) => ({
-    name: `${r.title || 'Role'} @ ${r.institution || ''}`,
+    name: `${r.job_title || 'Role'} @ ${r.organization || ''}`,
     start: (r.start_year || minYear) - minYear,
     duration: (r.end_year || new Date().getFullYear()) - (r.start_year || minYear),
     color: COLORS[i % COLORS.length],

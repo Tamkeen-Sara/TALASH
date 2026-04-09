@@ -15,9 +15,13 @@ import fitz  # PyMuPDF
 from groq import AsyncGroq
 
 from backend.config import settings
-from backend.schemas.candidate import CandidateProfile, EmploymentProfile, SkillProfile
+from backend.schemas.candidate import (
+    CandidateProfile, EmploymentProfile, EmploymentRecord, SkillProfile, MissingInfo
+)
 from backend.schemas.education import EducationProfile, SSERecord, HSERecord, DegreeRecord
-from backend.schemas.research import ResearchProfile, JournalPaper, ConferencePaper
+from backend.schemas.research import (
+    ResearchProfile, JournalPaper, ConferencePaper, Book, Patent, SupervisionRecord
+)
 
 client = AsyncGroq(api_key=settings.groq_api_key)
 
@@ -142,7 +146,6 @@ async def extract_cv(pdf_path: str) -> CandidateProfile:
     data = json.loads(raw_json)
     candidate_id = str(uuid.uuid4())[:8]
 
-    # Build nested Pydantic objects
     edu_data = data.get("education", {})
     res_data = data.get("research", {})
     emp_data = data.get("employment", {})
@@ -162,9 +165,30 @@ async def extract_cv(pdf_path: str) -> CandidateProfile:
         research=ResearchProfile(
             journal_papers=[JournalPaper(**p) for p in res_data.get("journal_papers", [])],
             conference_papers=[ConferencePaper(**p) for p in res_data.get("conference_papers", [])],
+            books=[Book(**b) for b in res_data.get("books", [])],
+            patents=[Patent(**p) for p in res_data.get("patents", [])],
+            supervision=[_parse_supervision(s) for s in res_data.get("supervision", [])],
         ),
-        employment=EmploymentProfile(),
+        employment=EmploymentProfile(
+            records=[EmploymentRecord(**r) for r in emp_data.get("records", [])],
+        ),
         skills=SkillProfile(claimed_skills=skills_data.get("claimed_skills", [])),
+        missing_info=[MissingInfo(**m) for m in data.get("missing_info", [])],
         processing_status="extracted",
     )
     return profile
+
+
+def _parse_supervision(raw: dict) -> SupervisionRecord:
+    """Normalise LLM supervision output to match schema literals."""
+    role_map = {"main": "main", "co": "co-supervisor", "co-supervisor": "co-supervisor"}
+    degree_map = {"phd": "PhD", "ms": "MS", "mphil": "MS", "msc": "MS"}
+    role = role_map.get(str(raw.get("role", "main")).lower(), "main")
+    degree = degree_map.get(str(raw.get("degree_level", "PhD")).lower(), "PhD")
+    return SupervisionRecord(
+        student_name=raw.get("student_name", "Unknown"),
+        degree_level=degree,
+        role=role,
+        year_graduated=raw.get("year_graduated"),
+        thesis_title=raw.get("thesis_title"),
+    )

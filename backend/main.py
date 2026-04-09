@@ -58,15 +58,19 @@ async def health():
 @app.post("/api/upload")
 async def upload_cvs(files: list[UploadFile] = File(...), jd: str = Form("")):
     """Upload CVs and return SSE stream of processing progress."""
+    # Read all file contents eagerly — UploadFile closes when StreamingResponse starts
+    file_data = []
+    for file in files:
+        content = await file.read()
+        file_data.append((file.filename, content))
+
     async def event_stream():
-        for file in files:
+        for filename, content in file_data:
             try:
-                # Save uploaded file
-                save_path = f"data/cvs/{uuid.uuid4()}_{file.filename}"
-                content = await file.read()
+                save_path = f"data/cvs/{uuid.uuid4()}_{filename}"
                 Path(save_path).write_bytes(content)
 
-                yield f"data: {json.dumps({'status': 'parsing', 'file': file.filename})}\n\n"
+                yield f"data: {json.dumps({'status': 'parsing', 'file': filename})}\n\n"
 
                 # Extract CV
                 profile = await extract_cv(save_path)
@@ -78,7 +82,7 @@ async def upload_cvs(files: list[UploadFile] = File(...), jd: str = Form("")):
                 yield f"data: {json.dumps({'status': 'complete', 'candidate': profile.full_name, 'id': profile.candidate_id})}\n\n"
 
             except Exception as e:
-                yield f"data: {json.dumps({'status': 'error', 'file': file.filename, 'error': str(e)})}\n\n"
+                yield f"data: {json.dumps({'status': 'error', 'file': filename, 'error': str(e)})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
