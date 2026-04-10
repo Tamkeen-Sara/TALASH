@@ -2,11 +2,11 @@
 Personalized Missing-Info Email Generator
 Uses Claude Sonnet to generate human-sounding emails per candidate.
 """
-import anthropic
+from groq import AsyncGroq
 from backend.schemas.candidate import CandidateProfile, MissingInfo
 from backend.config import settings
 
-client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+client = AsyncGroq(api_key=settings.groq_api_key)
 
 
 async def draft_missing_info_email(candidate: CandidateProfile) -> str:
@@ -32,9 +32,9 @@ Requirements:
 - Sign off as "The Recruitment Committee"
 """
 
-    response = await client.messages.create(
+    response = await client.chat.completions.create(
         model=settings.reasoning_model,
         max_tokens=512,
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.content[0].text.strip()
+    return response.choices[0].message.content.strip()

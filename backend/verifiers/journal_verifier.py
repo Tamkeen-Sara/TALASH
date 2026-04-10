@@ -1,5 +1,5 @@
 """
-Journal Verification — Six-Tier Fallback Chain
+Journal verification with a six-tier fallback chain
 Tier 1: SQLite cache (instant, zero API cost)
 Tier 2: CrossRef (DOI/ISSN-based, most reliable)
 Tier 3: OpenAlex (comprehensive free academic graph)
@@ -7,7 +7,7 @@ Tier 4: Semantic Scholar (influential citation count)
 Tier 5: ISSN Portal (legitimacy check)
 Tier 6: Unverified (mark transparently, never fail silently)
 
-Never rely on LLM for journal quality — all facts from real APIs.
+Never rely on LLMs for journal quality. All facts come from real APIs.
 """
 import asyncio
 import aiohttp
@@ -75,7 +75,7 @@ def _check_predatory(journal_name: str) -> tuple[bool, str | None]:
 
 async def verify_journal(issn: str | None, title: str) -> dict:
     """
-    Main entry point — run full fallback chain.
+    Main entry point that runs the full fallback chain.
     Returns enriched dict with WoS status, quartile, IF, predatory flag.
     """
     # Tier 1: Cache

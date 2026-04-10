@@ -1,5 +1,5 @@
 """
-PDF Report Generator — ReportLab
+PDF report generator using ReportLab.
 Generates candidate assessment reports as downloadable PDFs.
 """
 from reportlab.lib.pagesizes import A4

@@ -52,7 +52,7 @@ def lookup_conference(name: str) -> dict:
 
 
 async def verify_conference(name: str, edition: str | None = None) -> dict:
-    """Main entry — verify conference rank + extract maturity info."""
+    """Main entry to verify conference rank and extract maturity info."""
     cached = cache.get("conference", {"name": name})
     if cached:
         return cached

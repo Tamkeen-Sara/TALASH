@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional, Literal
+from pydantic import BaseModel, model_validator
+from typing import Optional, Literal, Any
 
 
 class JournalPaper(BaseModel):
@@ -11,16 +11,28 @@ class JournalPaper(BaseModel):
     authors: list[str] = []
     candidate_position: Optional[int] = None
     is_corresponding: bool = False
-    # Enriched by journal_verifier — all from REAL APIs, never LLM
+    # Enriched by journal_verifier. Data comes from real APIs, not from the LLM.
     is_wos_indexed: Optional[bool] = None
     is_scopus_indexed: Optional[bool] = None
     impact_factor: Optional[float] = None
     wos_quartile: Optional[str] = None  # Q1, Q2, Q3, Q4
     citation_count: Optional[int] = None
     influential_citation_count: Optional[int] = None
-    verification_source: Optional[str] = None  # which tier verified it
+    verification_source: Optional[str] = None
     is_predatory_flag: bool = False
     predatory_reason: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_nulls(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for field in ("is_corresponding", "is_predatory_flag"):
+                if data.get(field) is None:
+                    data[field] = False
+            for field in ("authors",):
+                if data.get(field) is None:
+                    data[field] = []
+        return data
 
 
 class ConferencePaper(BaseModel):
@@ -30,13 +42,23 @@ class ConferencePaper(BaseModel):
     authors: list[str] = []
     candidate_position: Optional[int] = None
     is_corresponding: bool = False
-    proceedings_publisher: Optional[str] = None  # IEEE, Springer, ACM, etc.
+    proceedings_publisher: Optional[str] = None
     # Enriched by conference_verifier
     core_rank: Optional[str] = None  # A*, A, B, C, Unranked
-    conference_edition: Optional[str] = None  # "13th International Conference"
+    conference_edition: Optional[str] = None
     conference_number: Optional[int] = None   # maturity check (spec §3.2.ii.b)
     is_scopus_indexed: Optional[bool] = None
     verification_source: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_nulls(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if data.get("is_corresponding") is None:
+                data["is_corresponding"] = False
+            if data.get("authors") is None:
+                data["authors"] = []
+        return data
 
 
 class Book(BaseModel):
@@ -46,10 +68,20 @@ class Book(BaseModel):
     publisher: Optional[str] = None
     year: Optional[int] = None
     online_link: Optional[str] = None
-    candidate_role: Optional[str] = None  # sole, lead, co-author
+    candidate_role: Optional[str] = None
     # Enriched by books_patents_agent
     is_verified: bool = False
     verification_source: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_nulls(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if data.get("is_verified") is None:
+                data["is_verified"] = False
+            if data.get("authors") is None:
+                data["authors"] = []
+        return data
 
 
 class Patent(BaseModel):
@@ -59,10 +91,20 @@ class Patent(BaseModel):
     inventors: list[str] = []
     country: Optional[str] = None
     online_link: Optional[str] = None
-    candidate_role: Optional[str] = None  # lead, co-inventor
+    candidate_role: Optional[str] = None
     # Enriched by patent_verifier
     is_verified: bool = False
     verification_source: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_nulls(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if data.get("is_verified") is None:
+                data["is_verified"] = False
+            if data.get("inventors") is None:
+                data["inventors"] = []
+        return data
 
 
 class SupervisionRecord(BaseModel):

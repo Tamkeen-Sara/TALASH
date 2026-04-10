@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # API Keys
-    anthropic_api_key: str = ""
+    groq_api_key: str = ""
     core_api_key: str = ""
     semantic_scholar_api_key: str = ""
     polite_mailto: str = "talash@example.com"
@@ -14,9 +14,9 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
 
-    # Models
-    extraction_model: str = "claude-haiku-4-5-20251001"
-    reasoning_model: str = "claude-sonnet-4-6"
+    # Models (Groq free tier)
+    extraction_model: str = "llama-3.3-70b-versatile"
+    reasoning_model: str = "llama-3.3-70b-versatile"
 
     # Scoring weights (must sum to 1.0)
     weight_research: float = 0.35

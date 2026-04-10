@@ -1,14 +1,15 @@
-"""
-TALASH — FastAPI Entry Point
+"""TALASH FastAPI entry point.
+
 Endpoints:
-  GET  /health              — Health check
-  POST /api/upload          — Upload CVs, returns SSE stream of processing events
-  GET  /api/candidates      — List all analyzed candidates (ranked)
-  GET  /api/candidates/{id} — Get single candidate detail
-  POST /api/candidates/{id}/supervision — Add supervision data (manual entry)
-  GET  /api/export/csv      — Download all candidates as CSV
-  GET  /api/export/xlsx     — Download all candidates as Excel
-  GET  /api/report/{id}     — Download PDF report for a candidate
+    GET  /health                  - Health check
+    POST /api/upload              - Upload CVs (SSE stream of processing events)
+    POST /api/upload/bulk         - Upload a single multi-CV PDF (auto-split and process)
+    GET  /api/candidates          - List all analyzed candidates (ranked)
+    GET  /api/candidates/{id}     - Get single candidate detail
+    POST /api/candidates/{id}/supervision - Add supervision data (manual entry)
+    GET  /api/export/csv          - Download all candidates as CSV
+    GET  /api/export/xlsx         - Download all candidates as Excel
+    GET  /api/report/{id}         - Download PDF report for a candidate
 """
 import asyncio
 import json
@@ -21,9 +22,11 @@ from fastapi.responses import StreamingResponse, FileResponse, Response
 
 from backend.config import settings
 from backend.agents.preprocessor import extract_cv
+from backend.agents.education_agent import run as run_education_agent
 from backend.verifiers.university_verifier import scrape_and_store_rankings
 from backend.verifiers.conference_verifier import load_core_rankings
 from backend.reports.pdf_generator import generate_candidate_report
+from backend.utils.pdf_splitter import split_pdf_into_cvs
 
 app = FastAPI(
     title="TALASH",
@@ -58,27 +61,74 @@ async def health():
 @app.post("/api/upload")
 async def upload_cvs(files: list[UploadFile] = File(...), jd: str = Form("")):
     """Upload CVs and return SSE stream of processing progress."""
+    # Read file contents eagerly because UploadFile closes when StreamingResponse starts.
+    file_data = []
+    for file in files:
+        content = await file.read()
+        file_data.append((file.filename, content))
+
     async def event_stream():
-        for file in files:
+        for filename, content in file_data:
             try:
-                # Save uploaded file
-                save_path = f"data/cvs/{uuid.uuid4()}_{file.filename}"
-                content = await file.read()
+                save_path = f"data/cvs/{uuid.uuid4()}_{filename}"
                 Path(save_path).write_bytes(content)
 
-                yield f"data: {json.dumps({'status': 'parsing', 'file': file.filename})}\n\n"
+                yield f"data: {json.dumps({'status': 'parsing', 'file': filename})}\n\n"
 
-                # Extract CV
+                # Step 1: Extract CV structure via LLM
                 profile = await extract_cv(save_path)
-                _candidates[profile.candidate_id] = profile
-
                 yield f"data: {json.dumps({'status': 'extracted', 'candidate': profile.full_name, 'id': profile.candidate_id})}\n\n"
 
-                # TODO Week 3+: Run education_agent, research_agent, etc.
+                # Step 2: Education agent (CGPA normalisation, university ranking, gap detection)
+                profile.education = await run_education_agent(profile.education, profile.employment)
+                profile.score_education = profile.education.education_score
+                yield f"data: {json.dumps({'status': 'education_scored', 'candidate': profile.full_name, 'score': profile.score_education})}\n\n"
+
+                # TODO: Add research_agent, employment_agent, and skill_agent.
+                _candidates[profile.candidate_id] = profile
                 yield f"data: {json.dumps({'status': 'complete', 'candidate': profile.full_name, 'id': profile.candidate_id})}\n\n"
 
             except Exception as e:
-                yield f"data: {json.dumps({'status': 'error', 'file': file.filename, 'error': str(e)})}\n\n"
+                yield f"data: {json.dumps({'status': 'error', 'file': filename, 'error': str(e)})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.post("/api/upload/bulk")
+async def upload_bulk_pdf(file: UploadFile = File(...), jd: str = Form("")):
+    """
+    Upload a single multi-CV PDF (e.g. a compiled applicant pack).
+    Auto-splits into individual CVs, then processes each via SSE stream.
+    """
+    content = await file.read()
+    save_path = f"data/cvs/{uuid.uuid4().hex[:8]}_{file.filename}"
+    Path(save_path).write_bytes(content)
+
+    async def event_stream():
+        try:
+            yield f"data: {json.dumps({'status': 'splitting', 'file': file.filename})}\n\n"
+            loop = asyncio.get_event_loop()
+            split_paths = await loop.run_in_executor(None, split_pdf_into_cvs, save_path)
+            yield f"data: {json.dumps({'status': 'split_complete', 'count': len(split_paths)})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'status': 'error', 'file': file.filename, 'error': str(e)})}\n\n"
+            return
+
+        for i, cv_path in enumerate(split_paths):
+            cv_name = f"CV {i+1} from {file.filename}"
+            try:
+                yield f"data: {json.dumps({'status': 'parsing', 'file': cv_name})}\n\n"
+                profile = await extract_cv(cv_path)
+                yield f"data: {json.dumps({'status': 'extracted', 'candidate': profile.full_name, 'id': profile.candidate_id})}\n\n"
+
+                profile.education = await run_education_agent(profile.education, profile.employment)
+                profile.score_education = profile.education.education_score
+                yield f"data: {json.dumps({'status': 'education_scored', 'candidate': profile.full_name, 'score': profile.score_education})}\n\n"
+
+                _candidates[profile.candidate_id] = profile
+                yield f"data: {json.dumps({'status': 'complete', 'candidate': profile.full_name, 'id': profile.candidate_id})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'status': 'error', 'file': cv_name, 'error': str(e)})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -98,7 +148,7 @@ async def get_candidate(candidate_id: str):
 
 @app.post("/api/candidates/{candidate_id}/supervision")
 async def add_supervision(candidate_id: str, supervision_data: dict):
-    """Manual entry of supervision records (spec §3.3 — often not in CV)."""
+    """Manual entry of supervision records (often not included in CV text)."""
     c = _candidates.get(candidate_id)
     if not c:
         raise HTTPException(status_code=404, detail="Candidate not found")

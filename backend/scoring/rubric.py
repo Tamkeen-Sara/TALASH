@@ -1,5 +1,5 @@
 """
-Scoring Rubric — Weight definitions and normalization strategy.
+Scoring rubric with weight definitions and normalization strategy.
 All scores are min-max normalized within the current cohort (0-100 relative).
 """
 from dataclasses import dataclass
