@@ -1,15 +1,15 @@
-"""
-TALASH — FastAPI Entry Point
+"""TALASH FastAPI entry point.
+
 Endpoints:
-  GET  /health                  — Health check
-  POST /api/upload              — Upload CVs (SSE stream of processing events)
-  POST /api/upload/bulk         — Upload a single multi-CV PDF (auto-split + process)
-  GET  /api/candidates          — List all analyzed candidates (ranked)
-  GET  /api/candidates/{id}     — Get single candidate detail
-  POST /api/candidates/{id}/supervision — Add supervision data (manual entry)
-  GET  /api/export/csv          — Download all candidates as CSV
-  GET  /api/export/xlsx         — Download all candidates as Excel
-  GET  /api/report/{id}         — Download PDF report for a candidate
+    GET  /health                  - Health check
+    POST /api/upload              - Upload CVs (SSE stream of processing events)
+    POST /api/upload/bulk         - Upload a single multi-CV PDF (auto-split and process)
+    GET  /api/candidates          - List all analyzed candidates (ranked)
+    GET  /api/candidates/{id}     - Get single candidate detail
+    POST /api/candidates/{id}/supervision - Add supervision data (manual entry)
+    GET  /api/export/csv          - Download all candidates as CSV
+    GET  /api/export/xlsx         - Download all candidates as Excel
+    GET  /api/report/{id}         - Download PDF report for a candidate
 """
 import asyncio
 import json
@@ -61,7 +61,7 @@ async def health():
 @app.post("/api/upload")
 async def upload_cvs(files: list[UploadFile] = File(...), jd: str = Form("")):
     """Upload CVs and return SSE stream of processing progress."""
-    # Read all file contents eagerly — UploadFile closes when StreamingResponse starts
+    # Read file contents eagerly because UploadFile closes when StreamingResponse starts.
     file_data = []
     for file in files:
         content = await file.read()
@@ -84,7 +84,7 @@ async def upload_cvs(files: list[UploadFile] = File(...), jd: str = Form("")):
                 profile.score_education = profile.education.education_score
                 yield f"data: {json.dumps({'status': 'education_scored', 'candidate': profile.full_name, 'score': profile.score_education})}\n\n"
 
-                # TODO Week 5+: research_agent, employment_agent, skill_agent
+                # TODO: Add research_agent, employment_agent, and skill_agent.
                 _candidates[profile.candidate_id] = profile
                 yield f"data: {json.dumps({'status': 'complete', 'candidate': profile.full_name, 'id': profile.candidate_id})}\n\n"
 
@@ -148,7 +148,7 @@ async def get_candidate(candidate_id: str):
 
 @app.post("/api/candidates/{candidate_id}/supervision")
 async def add_supervision(candidate_id: str, supervision_data: dict):
-    """Manual entry of supervision records (spec §3.3 — often not in CV)."""
+    """Manual entry of supervision records (often not included in CV text)."""
     c = _candidates.get(candidate_id)
     if not c:
         raise HTTPException(status_code=404, detail="Candidate not found")

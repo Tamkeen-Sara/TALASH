@@ -15,7 +15,7 @@ _RANKINGS_DB = "data/university_rankings.db"
 _rankings_cache: list[dict] = []
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Curated QS World University Rankings 2024 (top 200 global + all Pakistani)
+# Curated QS World University Rankings 2024 (top 200 global plus all Pakistani)
 # Source: QS World University Rankings 2024 (public data)
 # Format: (full_name, qs_rank, the_rank)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ _QS_DATA: list[tuple] = [
     ("University of Wisconsin Madison", 79, None),
     ("University of Illinois Urbana Champaign", 72, None),
     ("Purdue University", 99, None),
-    # 51–200 Global (selective)
+    # 51-200 Global (selective)
     ("University of Glasgow", 73, None),
     ("University of Birmingham", 84, None),
     ("University of Sheffield", 97, None),

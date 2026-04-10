@@ -1,4 +1,4 @@
-"""Module 3: Topic Variability Analysis — Week 10"""
-# TODO: Implement in Week 10
+"""Module 3: Topic variability analysis."""
+# TODO: Implement in a future milestone
 # - BERTopic clustering
 # - Normalized entropy diversity score

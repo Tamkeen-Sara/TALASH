@@ -11,7 +11,7 @@ class JournalPaper(BaseModel):
     authors: list[str] = []
     candidate_position: Optional[int] = None
     is_corresponding: bool = False
-    # Enriched by journal_verifier — all from REAL APIs, never LLM
+    # Enriched by journal_verifier. Data comes from real APIs, not from the LLM.
     is_wos_indexed: Optional[bool] = None
     is_scopus_indexed: Optional[bool] = None
     impact_factor: Optional[float] = None
