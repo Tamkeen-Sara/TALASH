@@ -1,5 +1,5 @@
-"""Module 2: Research Profile Analysis — Week 5-7"""
-# TODO: Implement in Week 5
+"""Module 2: Research profile analysis."""
+# TODO: Implement in a future milestone
 # - H-index computation
 # - Journal/conference verification via fallback chain
 # - Predatory journal detection

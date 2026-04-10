@@ -1,12 +1,11 @@
-import { createContext, useContext, useState } from 'react'
+import { useState } from 'react'
+import { AuthContext } from './AuthContextObject'
 
-const AuthContext = createContext(null)
-
-// Demo credentials (course project fallback)
+// Demo credentials for local development and demos.
 const DEMO_USERS = [
-  { email: 'admin@talash.ai',   password: 'talash2024', name: 'Admin User',    role: 'Hiring Manager', initials: 'AU', picture: null },
-  { email: 'tamkeen@talash.ai', password: 'talash2024', name: 'Tamkeen Sara',  role: 'Recruiter',      initials: 'TS', picture: null },
-  { email: 'furqan@talash.ai',  password: 'talash2024', name: 'Furqan Raza',   role: 'Analyst',        initials: 'FR', picture: null },
+  { email: 'admin@talash.ai',   password: 'talash12345', name: 'Admin User',   role: 'Hiring Manager', initials: 'AU', picture: null },
+  { email: 'tamkeen@talash.ai', password: 'talash12345', name: 'Tamkeen Sara', role: 'Recruiter',      initials: 'TS', picture: null },
+  { email: 'furqan@talash.ai',  password: 'talash12345', name: 'Furqan Raza',  role: 'Analyst',        initials: 'FR', picture: null },
 ]
 
 function persist(user) {
@@ -30,7 +29,6 @@ export function AuthProvider({ children }) {
   }
 
   const googleLogin = (googleUser) => {
-    // googleUser: { name, email, picture, sub }
     const safe = {
       name: googleUser.name,
       email: googleUser.email,
@@ -53,5 +51,3 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   )
 }
-
-export const useAuth = () => useContext(AuthContext)

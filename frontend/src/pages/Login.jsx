@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Loader2, ChevronDown } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 
 /* ── Google SVG Logo ── */
 function GoogleLogo({ size = 18 }) {
@@ -316,7 +316,7 @@ export default function Login() {
               <div style={{ color: 'var(--text-secondary)' }}>admin@talash.ai</div>
               <div style={{ color: 'var(--text-secondary)' }}>tamkeen@talash.ai</div>
               <div style={{ color: 'var(--text-secondary)' }}>furqan@talash.ai</div>
-              <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>password: talash2024</div>
+              <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>password: talash12345</div>
             </div>
           )}
         </div>

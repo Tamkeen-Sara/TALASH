@@ -1,4 +1,4 @@
-"""Module 8: Skill Alignment Engine — Week 10"""
-# TODO: Implement in Week 10
+"""Module 8: Skill alignment engine."""
+# TODO: Implement in a future milestone
 # - sentence-transformers cosine similarity
 # - Strong/Partial/Weak/Unsupported classification

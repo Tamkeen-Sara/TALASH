@@ -1,7 +1,7 @@
-"""
-Unit tests for Module 0: Preprocessor
+"""Unit tests for Module 0: preprocessor.
+
 Tests cover text extraction, JSON parsing, Pydantic mapping, and edge cases.
-All LLM calls are mocked — no real API calls.
+All LLM calls are mocked, so no real API calls are made.
 """
 import json
 import pytest
@@ -346,11 +346,11 @@ class TestExtractCV:
 
 
 # ---------------------------------------------------------------------------
-# Tests: extract_raw_text (no mocking needed — tests real PDF parsing logic)
+# Tests: extract_raw_text (no mocking needed; exercises real PDF parsing logic)
 # ---------------------------------------------------------------------------
 class TestExtractRawText:
     def test_returns_string_for_missing_file(self):
-        # Should not crash — returns empty string
+        # Should not crash; returns an empty string.
         result = extract_raw_text("/nonexistent/path/cv.pdf")
         assert isinstance(result, str)
 

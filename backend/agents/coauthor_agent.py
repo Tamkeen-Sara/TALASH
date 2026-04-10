@@ -1,4 +1,4 @@
-"""Module 4: Co-author Analysis — Week 10"""
-# TODO: Implement in Week 10
+"""Module 4: Co-author analysis."""
+# TODO: Implement in a future milestone
 # - NetworkX ego graph
 # - Collaboration metrics
