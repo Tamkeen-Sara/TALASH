@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, Literal
 
 
@@ -9,6 +9,11 @@ class SSERecord(BaseModel):
     grade: Optional[str] = None
     raw_text: str = ""
 
+    @field_validator("raw_text", mode="before")
+    @classmethod
+    def coerce_none(cls, v):
+        return v if v is not None else ""
+
 
 class HSERecord(BaseModel):
     percentage: Optional[float] = None
@@ -16,6 +21,11 @@ class HSERecord(BaseModel):
     year: Optional[int] = None
     grade: Optional[str] = None
     raw_text: str = ""
+
+    @field_validator("raw_text", mode="before")
+    @classmethod
+    def coerce_none(cls, v):
+        return v if v is not None else ""
 
 
 class DegreeRecord(BaseModel):
@@ -35,6 +45,11 @@ class DegreeRecord(BaseModel):
     the_rank: Optional[int] = None
     qs_subject_rank: Optional[int] = None
     raw_text: str = ""
+
+    @field_validator("raw_text", mode="before")
+    @classmethod
+    def coerce_none(cls, v):
+        return v if v is not None else ""
 
 
 class EducationProfile(BaseModel):

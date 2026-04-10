@@ -21,19 +21,23 @@ export const exportXLSX = () =>
 export const downloadReport = (id) =>
   api.get(`/report/${id}`, { responseType: 'blob' })
 
+/**
+ * Parse SSE events from an XHR stream without duplicates.
+ * SSE events are separated by \n\n — split on that boundary,
+ * keep incomplete trailing event in buffer for next tick.
+ */
 function makeSseParser(onEvent) {
   let processedLen = 0
   let partial = ''
   return (text) => {
-    const newText = text.slice(processedLen)
+    partial += text.slice(processedLen)
     processedLen = text.length
-    partial += newText
     const chunks = partial.split('\n\n')
     partial = chunks.pop()
     for (const chunk of chunks) {
       for (const line of chunk.split('\n')) {
         if (line.startsWith('data: ')) {
-          try { onEvent(JSON.parse(line.slice(6))) } catch { /* partial */ }
+          try { onEvent(JSON.parse(line.slice(6))) } catch { /* partial chunk */ }
         }
       }
     }
@@ -41,8 +45,8 @@ function makeSseParser(onEvent) {
 }
 
 /**
- * Upload individual CV files via SSE stream.
- * Returns a cleanup function.
+ * Upload individual CV PDFs via SSE stream.
+ * Returns a cleanup (abort) function.
  */
 export const uploadCVs = (files, jd, onEvent) => {
   const formData = new FormData()
@@ -59,7 +63,7 @@ export const uploadCVs = (files, jd, onEvent) => {
 
 /**
  * Upload a single bulk PDF (many CVs in one file) via SSE stream.
- * Returns a cleanup function.
+ * Returns a cleanup (abort) function.
  */
 export const uploadBulkPDF = (file, jd, onEvent) => {
   const formData = new FormData()
