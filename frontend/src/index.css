@@ -2,7 +2,7 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════
-   TALASH — Scholar's Warmth Design System
+  TALASH: Scholar's Warmth Design System
    Theme: deep twilight base + amber lamplight accents
    Feels: warm, focused, scholarly, extraordinary
 ═══════════════════════════════════════════════════ */
@@ -24,11 +24,11 @@
   --border-strong:  #2c2a47;
 
   /* Typography */
-  --text-primary:   #f0ece0;   /* warm cream — human, legible, not cold */
+  --text-primary:   #f0ece0;   /* warm cream; human, legible, not cold */
   --text-secondary: #8a8298;   /* muted lavender-gray */
   --text-muted:     #3e3a55;   /* deep muted */
 
-  /* Accent — amber lamplight */
+  /* Accent: amber lamplight */
   --accent:         #f0a030;
   --accent-light:   #f8bc58;
   --accent-dim:     rgba(240,160,48,0.12);
@@ -48,7 +48,7 @@
   --error:    #fb7185;
   --info:     #38bdf8;
 
-  /* Gradient — primary CTA */
+  /* Gradient: primary CTA */
   --grad-primary: linear-gradient(135deg, #e8930a 0%, #f5b030 100%);
   --grad-hero:    linear-gradient(145deg, #0b0918 0%, #100c22 50%, #090d18 100%);
 

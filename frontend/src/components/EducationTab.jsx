@@ -1,8 +1,5 @@
-/**
- * Furqan's Week 3 contribution:
- * Education tab — degrees table, QS rank badges, CGPA display,
- * gap timeline with justified/unjustified flags, score breakdown.
- */
+// Education tab with degree details, rank badges, CGPA display,
+// gap timeline, and score breakdown.
 
 function QsRankBadge({ rank }) {
   if (!rank) return <span className="text-xs text-slate-400 italic">Unranked</span>
