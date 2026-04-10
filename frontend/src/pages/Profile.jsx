@@ -1,4 +1,4 @@
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 import useCandidateStore from '../store/candidateStore'
 import WeightSliders from '../components/WeightSliders'
 import usePageTitle from '../hooks/usePageTitle'
@@ -39,7 +39,7 @@ export default function Profile() {
            Avatar uses position:absolute relative to the wrapper. ── */}
       <div style={{ position: 'relative', marginBottom: 24 }}>
 
-        {/* Banner — fully self-contained, clips its own orbs */}
+        {/* Banner is self-contained and clips its own orbs */}
         <div style={{
           height: 108,
           borderRadius: 16,
@@ -59,7 +59,7 @@ export default function Profile() {
           }} />
         </div>
 
-        {/* Avatar — absolute, bridging banner and body */}
+        {/* Avatar is absolute and bridges the banner and body */}
         <div style={{
           position: 'absolute',
           top: 108 - 36,   /* banner height minus half avatar height */
@@ -85,7 +85,7 @@ export default function Profile() {
           }
         </div>
 
-        {/* Body card — no overflow:hidden, sits below banner */}
+        {/* Body card sits below banner without overflow hidden */}
         <div style={{
           background: 'var(--bg-card)',
           border: '1px solid var(--border-subtle)',

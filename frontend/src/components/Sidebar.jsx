@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Upload, LayoutDashboard, ArrowLeftRight, User, LogOut, Users, Sun, Moon } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 import useCandidateStore from '../store/candidateStore'
 import useTheme from '../hooks/useTheme'
 
