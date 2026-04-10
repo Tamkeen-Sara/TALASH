@@ -18,7 +18,7 @@ function downloadBlob(blob, filename) {
 function SupervisionForm({ candidateId, onAdded }) {
   const [form, setForm] = useState({
     student_name: '', degree_level: 'PhD', thesis_title: '',
-    role: 'main', year: new Date().getFullYear(), status: 'completed',
+    role: 'main', year_graduated: new Date().getFullYear(),
   })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg]       = useState('')
@@ -55,14 +55,10 @@ function SupervisionForm({ candidateId, onAdded }) {
         </select>
         <select value={form.role} onChange={e => set('role', e.target.value)} className="input-dark">
           <option value="main">Main Supervisor</option>
-          <option value="co">Co-Supervisor</option>
+          <option value="co-supervisor">Co-Supervisor</option>
         </select>
-        <input type="number" value={form.year}
-          onChange={e => set('year', Number(e.target.value))} className="input-dark" />
-        <select value={form.status} onChange={e => set('status', e.target.value)} className="input-dark">
-          <option value="completed">Completed</option>
-          <option value="ongoing">Ongoing</option>
-        </select>
+        <input type="number" placeholder="Year graduated" value={form.year_graduated}
+          onChange={e => set('year_graduated', Number(e.target.value))} className="input-dark" />
         <button type="submit" disabled={saving} className="btn-primary"
           style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           {saving ? <><Loader2 size={14} className="animate-spin" />Saving…</> : 'Add Record'}
