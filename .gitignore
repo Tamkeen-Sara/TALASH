@@ -24,8 +24,8 @@ env/
 *.db
 *.sqlite3
 
-# CV uploads (do not commit candidate data)
-data/cvs/
+# CV uploads and runtime data (do not commit candidate data)
+data/
 
 # Frontend
 frontend/node_modules/
