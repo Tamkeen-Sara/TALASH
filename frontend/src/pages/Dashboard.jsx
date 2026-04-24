@@ -22,7 +22,7 @@ function MiniBar({ value }) {
       <div style={{ flex: 1, height: 5, borderRadius: 9999, background: 'var(--border-default)', overflow: 'hidden' }}>
         <div style={{ width: `${pct}%`, height: '100%', borderRadius: 9999, background: color, transition: 'width 0.5s ease' }} />
       </div>
-      <span style={{ fontSize: 12, width: 28, textAlign: 'right', fontWeight: 600, color }}>{value ?? '—'}</span>
+      <span style={{ fontSize: 12, width: 28, textAlign: 'right', fontWeight: 600, color }}>{value ?? 0}</span>
     </div>
   )
 }
@@ -59,7 +59,7 @@ export default function Dashboard() {
 
   const avgScore = candidates.length
     ? (candidates.reduce((s, c) => s + Number(c.computed_score || 0), 0) / candidates.length).toFixed(1)
-    : '—'
+    : 'N/A'
 
   if (loading) return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 280, gap: 12 }}>
@@ -223,7 +223,7 @@ export default function Dashboard() {
 
                   <td style={{ padding: '14px 18px' }}>
                     <p style={{ fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>
-                      {c.full_name || '—'}
+                      {c.full_name || 'Unknown'}
                     </p>
                     <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {c.email || 'No email'}
@@ -235,20 +235,20 @@ export default function Dashboard() {
                   </td>
 
                   <td style={{ padding: '14px 18px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                    {c.score_research ?? '—'}
+                    {c.score_research ?? 'N/A'}
                   </td>
                   <td style={{ padding: '14px 18px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                    {c.score_education ?? '—'}
+                    {c.score_education ?? 'N/A'}
                   </td>
 
                   <td style={{ padding: '14px 18px' }}>
                     <span className="badge-q1" style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999 }}>
-                      {c.research?.q1_count ?? '—'}
+                      {c.research?.q1_count ?? 'N/A'}
                     </span>
                   </td>
 
                   <td style={{ padding: '14px 18px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                    {c.research?.h_index ?? '—'}
+                    {c.research?.h_index ?? 'N/A'}
                   </td>
 
                   <td style={{ padding: '14px 18px' }}>

@@ -60,7 +60,7 @@ export default function TimelineChart({ candidate }) {
             color: 'var(--text-primary)',
           }}
           formatter={(v, name, props) => [
-            `${props.payload.start + minYear} – ${props.payload.start + props.payload.duration + minYear}`,
+            `${props.payload.start + minYear} to ${props.payload.start + props.payload.duration + minYear}`,
             'Period',
           ]}
         />

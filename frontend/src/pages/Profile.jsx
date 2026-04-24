@@ -1,11 +1,13 @@
+import { useEffect } from 'react'
 import { useAuth } from '../context/useAuth'
 import useCandidateStore from '../store/candidateStore'
 import WeightSliders from '../components/WeightSliders'
 import usePageTitle from '../hooks/usePageTitle'
+import { getCandidates } from '../api/talash'
 import { Users, TrendingUp, FileText, GraduationCap, Cpu, Layers, Database, Server, Globe } from 'lucide-react'
 
 const SYS_INFO = [
-  { label: 'LLM Provider',    value: 'Groq — Llama 3.3 70B',       Icon: Cpu,      color: 'var(--success)' },
+  { label: 'LLM Provider',    value: 'Groq / Llama 3.3 70B',       Icon: Cpu,      color: 'var(--success)' },
   { label: 'Extraction',      value: 'llama-3.3-70b-versatile',     Icon: Layers,   color: 'var(--violet)' },
   { label: 'University DB',   value: '170+ ranked institutions',    Icon: Database, color: 'var(--sky)' },
   { label: 'Backend',         value: 'FastAPI + Python',            Icon: Server,   color: 'var(--rose)' },
@@ -15,11 +17,17 @@ const SYS_INFO = [
 export default function Profile() {
   usePageTitle('Profile')
   const { user } = useAuth()
-  const candidates = useCandidateStore(s => s.candidates)
+  const { candidates, setCandidates } = useCandidateStore()
+
+  useEffect(() => {
+    if (candidates.length === 0) {
+      getCandidates().then(r => setCandidates(r.data)).catch(() => {})
+    }
+  }, [])
 
   const avgScore = candidates.length
-    ? (candidates.reduce((s, c) => s + (c.computed_score || 0), 0) / candidates.length).toFixed(1)
-    : '—'
+    ? (candidates.reduce((s, c) => s + Number(c.computed_score || 0), 0) / candidates.length).toFixed(1)
+    : 'N/A'
   const totalQ1  = candidates.reduce((s, c) => s + (c.research?.q1_count || 0), 0)
   const totalPhD = candidates.filter(c => c.education?.degrees?.some(d => d.level === 'PhD')).length
 
@@ -31,7 +39,7 @@ export default function Profile() {
   ]
 
   return (
-    <div style={{ maxWidth: 820, padding: '40px 40px' }}>
+    <div style={{ maxWidth: 820, padding: '40px 40px', margin: '0 auto' }}>
 
       {/* ── Profile hero ──
            Two separate elements so no shared overflow/clip context.

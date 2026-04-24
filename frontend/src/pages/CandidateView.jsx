@@ -235,7 +235,7 @@ export default function CandidateView() {
                 background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)',
               }}>
                 <div style={{ fontSize: 20, fontWeight: 700, color: '#f0ece0', letterSpacing: '-0.02em' }}>
-                  {candidate[key] ?? '—'}
+                  {candidate[key] ?? 'N/A'}
                 </div>
                 <div style={{ fontSize: 11, color: 'rgba(240,236,224,0.45)', marginTop: 3 }}>{label}</div>
               </div>
@@ -344,7 +344,7 @@ export default function CandidateView() {
             ].map(({ label, value, color }) => (
               <div key={label} className="card" style={{ padding: '20px 22px', textAlign: 'center' }}>
                 <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.03em', color, marginBottom: 6 }}>
-                  {value ?? '—'}
+                  {value ?? 'N/A'}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</div>
               </div>
@@ -411,7 +411,7 @@ export default function CandidateView() {
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                        {r.start_year ?? '?'} – {r.is_current ? 'Present' : (r.end_year ?? '?')}
+                        {r.start_year ?? '?'} to {r.is_current ? 'Present' : (r.end_year ?? '?')}
                       </p>
                       {r.employment_type && (
                         <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, textTransform: 'capitalize' }}>
@@ -475,7 +475,7 @@ export default function CandidateView() {
               ))
             ) : (
               <p style={{ padding: '32px 22px', fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', fontStyle: 'italic' }}>
-                No supervision records yet — add one below.
+                No supervision records yet. Add one below.
               </p>
             )}
           </div>
@@ -486,7 +486,7 @@ export default function CandidateView() {
       {/* ════ RAW DATA ════ */}
       {tab === 'raw data' && (
         <div className="fade-up">
-          <JsonViewer data={candidate} title={`Extracted JSON — ${candidate.full_name}`} />
+          <JsonViewer data={candidate} title={`Extracted JSON: ${candidate.full_name}`} />
         </div>
       )}
     </div>

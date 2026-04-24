@@ -192,7 +192,7 @@ export default function Login() {
             }}>Faculty Hiring</span>
           </h1>
           <p style={{ color: 'rgba(255,255,255,0.48)', fontSize: 16, lineHeight: 1.65, maxWidth: 320 }}>
-            End-to-end AI analysis — from CV parsing to ranked shortlists. Built for SEECS NUST.
+            End-to-end AI analysis: from CV parsing to ranked shortlists. Built for SEECS NUST.
           </p>
 
           <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -212,7 +212,7 @@ export default function Login() {
         </div>
 
         <div style={{ position: 'relative', zIndex: 1, color: 'rgba(255,255,255,0.2)', fontSize: 12, letterSpacing: '0.04em' }}>
-          CS 417 — Large Language Models · SEECS NUST · 2026
+          CS 417 / Large Language Models · SEECS NUST · 2026
         </div>
       </div>
 

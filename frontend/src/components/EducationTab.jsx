@@ -1,30 +1,30 @@
-// Education tab with degree details, rank badges, CGPA display,
-// gap timeline, and score breakdown.
-
 function QsRankBadge({ rank }) {
-  if (!rank) return <span className="text-xs text-slate-400 italic">Unranked</span>
-  const color =
-    rank <= 100  ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' :
-    rank <= 500  ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' :
-    rank <= 1000 ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200' :
-                   'bg-slate-100 text-slate-600'
+  if (!rank) return <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>Unranked</span>
+  const [bg, color, border] =
+    rank <= 100  ? ['rgba(74,222,128,0.1)',  'var(--success)', 'rgba(74,222,128,0.25)'] :
+    rank <= 500  ? ['rgba(56,189,248,0.1)',  'var(--sky)',     'rgba(56,189,248,0.25)'] :
+    rank <= 1000 ? ['var(--accent-dim)',      'var(--accent)',  'var(--accent-ring)']    :
+                   ['var(--bg-elevated)',     'var(--text-muted)', 'var(--border-subtle)']
   return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${color}`}>
+    <span style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: 9999,
+      fontSize: 11, fontWeight: 600, background: bg, color, border: `1px solid ${border}`,
+    }}>
       QS #{rank}
     </span>
   )
 }
 
 function CgpaBar({ cgpa, scale = 4 }) {
-  if (!cgpa) return <span className="text-slate-400 text-xs italic">N/A</span>
+  if (!cgpa) return <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>N/A</span>
   const pct = Math.min(100, (cgpa / scale) * 100)
-  const color = pct >= 87.5 ? 'bg-emerald-500' : pct >= 75 ? 'bg-blue-500' : pct >= 62.5 ? 'bg-amber-400' : 'bg-red-400'
+  const color = pct >= 87.5 ? 'var(--success)' : pct >= 75 ? 'var(--sky)' : pct >= 62.5 ? 'var(--accent)' : 'var(--error)'
   return (
-    <div className="flex items-center gap-2 min-w-[100px]">
-      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 100 }}>
+      <div style={{ flex: 1, height: 6, background: 'var(--bg-elevated)', borderRadius: 9999, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 9999 }} />
       </div>
-      <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
         {cgpa}/{scale}
       </span>
     </div>
@@ -33,38 +33,56 @@ function CgpaBar({ cgpa, scale = 4 }) {
 
 function GapTimeline({ gaps }) {
   if (!gaps?.length) return (
-    <div className="flex items-center gap-2 text-emerald-600 text-sm">
-      <span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center text-xs">✓</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--success)' }}>
+      <span style={{
+        width: 20, height: 20, borderRadius: '50%', background: 'rgba(74,222,128,0.15)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
+      }}>✓</span>
       No education gaps detected
     </div>
   )
 
   return (
-    <div className="space-y-2">
-      {gaps.map((g, i) => (
-        <div key={i} className={`flex items-start gap-3 p-3 rounded-xl text-sm border
-          ${g.justified
-            ? 'bg-emerald-50 border-emerald-100'
-            : 'bg-red-50 border-red-100'}`}>
-          <span className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold
-            ${g.justified ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
-            {g.justified ? '✓' : '!'}
-          </span>
-          <div>
-            <p className={`font-semibold ${g.justified ? 'text-emerald-800' : 'text-red-800'}`}>
-              {g.from_year} – {g.to_year}
-              <span className="font-normal ml-2">({g.duration_years} year{g.duration_years !== 1 ? 's' : ''})</span>
-            </p>
-            {g.justified ? (
-              <p className="text-emerald-700 text-xs mt-0.5">
-                Justified — working as: {g.justifying_roles.join(', ')}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {gaps.map((g, i) => {
+        const justified = g.justified
+        const hasRoles = g.justifying_roles?.length > 0
+        return (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px',
+            borderRadius: 12, fontSize: 13,
+            background: justified ? 'rgba(74,222,128,0.07)' : 'rgba(251,113,133,0.07)',
+            border: `1px solid ${justified ? 'rgba(74,222,128,0.18)' : 'rgba(251,113,133,0.18)'}`,
+          }}>
+            <span style={{
+              marginTop: 1, flexShrink: 0, width: 20, height: 20, borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 700,
+              background: justified ? 'var(--success)' : 'var(--error)', color: '#fff',
+            }}>
+              {justified ? '✓' : '!'}
+            </span>
+            <div>
+              <p style={{ fontWeight: 600, color: justified ? 'var(--success)' : 'var(--error)', margin: 0 }}>
+                {g.from_year} to {g.to_year}
+                <span style={{ fontWeight: 400, marginLeft: 8, color: 'var(--text-muted)' }}>
+                  ({g.duration_years} year{g.duration_years !== 1 ? 's' : ''})
+                </span>
               </p>
-            ) : (
-              <p className="text-red-700 text-xs mt-0.5">Unjustified gap — no employment during this period</p>
-            )}
+              <p style={{ fontSize: 12, marginTop: 3, marginBottom: 0,
+                color: justified ? 'var(--success)' : 'var(--error)',
+                opacity: 0.85,
+              }}>
+                {justified
+                  ? hasRoles
+                    ? `Justified, working as: ${g.justifying_roles.join(', ')}`
+                    : 'Justified: enrolled in education program'
+                  : 'Unjustified gap: no activity during this period'}
+              </p>
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -72,24 +90,24 @@ function GapTimeline({ gaps }) {
 function ScoreBreakdown({ breakdown }) {
   if (!breakdown || !Object.keys(breakdown).length) return null
   const items = [
-    { key: 'academic_performance', label: 'Academic Performance', max: 40, color: 'bg-blue-500' },
-    { key: 'highest_qualification', label: 'Highest Qualification', max: 25, color: 'bg-indigo-500' },
-    { key: 'institutional_quality', label: 'Institutional Quality', max: 20, color: 'bg-purple-500' },
-    { key: 'gap_score', label: 'Gap Score', max: 15, color: 'bg-emerald-500' },
+    { key: 'academic_performance',  label: 'Academic Performance',  max: 40, color: 'var(--sky)'     },
+    { key: 'highest_qualification', label: 'Highest Qualification', max: 25, color: 'var(--violet)'  },
+    { key: 'institutional_quality', label: 'Institutional Quality', max: 20, color: '#a855f7'        },
+    { key: 'gap_score',             label: 'Gap Score',             max: 15, color: 'var(--success)'  },
   ]
   return (
-    <div className="space-y-3">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {items.map(({ key, label, max, color }) => {
         const val = breakdown[key] ?? 0
         const pct = Math.min(100, (val / max) * 100)
         return (
           <div key={key}>
-            <div className="flex justify-between text-xs mb-1">
-              <span className="text-slate-600 font-medium">{label}</span>
-              <span className="text-slate-500">{val} / {max}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+              <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</span>
+              <span style={{ color: 'var(--text-muted)' }}>{val} / {max}</span>
             </div>
-            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-              <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+            <div style={{ height: 6, background: 'var(--bg-elevated)', borderRadius: 9999, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 9999, transition: 'width 0.3s' }} />
             </div>
           </div>
         )
@@ -100,50 +118,56 @@ function ScoreBreakdown({ breakdown }) {
 
 export default function EducationTab({ candidate }) {
   const edu = candidate?.education
-  if (!edu) return <p className="text-slate-400 italic text-sm">No education data.</p>
+  if (!edu) return <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: 13 }}>No education data.</p>
 
   return (
-    <div className="space-y-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
       {/* Degrees table */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-800">Degrees</h3>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Degrees</h3>
         </div>
         {edu.degrees?.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
               <thead>
-                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
-                  <th className="px-5 py-3 text-left font-semibold">Degree</th>
-                  <th className="px-5 py-3 text-left font-semibold">Institution</th>
-                  <th className="px-5 py-3 text-left font-semibold">Period</th>
-                  <th className="px-5 py-3 text-left font-semibold">CGPA</th>
-                  <th className="px-5 py-3 text-left font-semibold">QS Rank</th>
+                <tr style={{ background: 'var(--bg-elevated)' }}>
+                  {['DEGREE', 'INSTITUTION', 'PERIOD', 'CGPA', 'QS RANK'].map(h => (
+                    <th key={h} style={{
+                      padding: '10px 20px', textAlign: 'left', fontSize: 10,
+                      fontWeight: 600, letterSpacing: '0.08em', color: 'var(--text-muted)',
+                    }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
+              <tbody>
                 {edu.degrees.map((d, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50">
-                    <td className="px-5 py-4">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold mr-2
-                        ${d.level === 'PhD' ? 'bg-purple-100 text-purple-700' :
-                          d.level?.startsWith('M') ? 'bg-blue-100 text-blue-700' :
-                          'bg-slate-100 text-slate-600'}`}>
-                        {d.level}
+                  <tr key={i} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                    <td style={{ padding: '14px 20px' }}>
+                      <span style={{
+                        display: 'inline-block', padding: '2px 7px', borderRadius: 9999,
+                        fontSize: 11, fontWeight: 700, marginRight: 8,
+                        background: d.level === 'PhD' ? 'rgba(168,85,247,0.12)' :
+                          d.level?.startsWith('M') ? 'rgba(56,189,248,0.12)' : 'var(--bg-elevated)',
+                        color: d.level === 'PhD' ? '#a855f7' :
+                          d.level?.startsWith('M') ? 'var(--sky)' : 'var(--text-muted)',
+                      }}>{d.level}</span>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                        {d.specialization || d.degree_title}
                       </span>
-                      <span className="text-slate-700 font-medium">{d.specialization || d.degree_title}</span>
                     </td>
-                    <td className="px-5 py-4 text-slate-600">{d.institution}</td>
-                    <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
-                      {d.start_year ?? '?'} – {d.is_ongoing ? 'Present' : (d.end_year ?? '?')}
+                    <td style={{ padding: '14px 20px', color: 'var(--text-secondary)' }}>{d.institution}</td>
+                    <td style={{ padding: '14px 20px', color: 'var(--text-muted)', fontSize: 12, whiteSpace: 'nowrap' }}>
+                      {d.start_year ?? '?'} to {d.is_ongoing ? 'Present' : (d.end_year ?? '?')}
                     </td>
-                    <td className="px-5 py-4">
+                    <td style={{ padding: '14px 20px' }}>
                       <CgpaBar
                         cgpa={d.cgpa_normalized ?? d.cgpa}
                         scale={d.cgpa_normalized ? 4 : (d.cgpa_scale ?? 4)}
                       />
                     </td>
-                    <td className="px-5 py-4">
+                    <td style={{ padding: '14px 20px' }}>
                       <QsRankBadge rank={d.qs_rank || d.the_rank} />
                     </td>
                   </tr>
@@ -152,40 +176,53 @@ export default function EducationTab({ candidate }) {
             </table>
           </div>
         ) : (
-          <p className="px-5 py-6 text-slate-400 italic text-sm">No degree records found.</p>
+          <p style={{ padding: '20px', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: 13 }}>
+            No degree records found.
+          </p>
         )}
       </div>
 
-      {/* SSE / HSE if present */}
+      {/* SSE / HSE */}
       {(edu.sse || edu.hse) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           {[edu.sse && { label: 'Secondary (SSE/Matric)', rec: edu.sse },
             edu.hse && { label: 'Higher Secondary (HSE/FSc)', rec: edu.hse }]
             .filter(Boolean).map(({ label, rec }) => (
-            <div key={label} className="bg-white rounded-2xl border border-slate-100 shadow-sm px-5 py-4">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{label}</p>
-              <div className="flex items-baseline gap-3">
-                <span className="text-2xl font-bold text-slate-800">{rec.percentage ?? '—'}%</span>
-                {rec.grade && <span className="text-sm text-slate-500">Grade {rec.grade}</span>}
+            <div key={label} className="card" style={{ padding: '16px 20px' }}>
+              <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>
+                {label}
+              </p>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                <span style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {rec.percentage ?? '--'}%
+                </span>
+                {rec.grade && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Grade {rec.grade}</span>}
               </div>
-              <p className="text-xs text-slate-400 mt-1">{rec.board ?? 'Board unknown'} · {rec.year ?? '—'}</p>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                {rec.board ?? 'Board unknown'} · {rec.year ?? 'Unknown'}
+              </p>
             </div>
           ))}
         </div>
       )}
 
       {/* Gap analysis */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-        <h3 className="font-semibold text-slate-800 mb-4">Gap Analysis</h3>
+      <div className="card" style={{ padding: '18px 20px' }}>
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 14 }}>Gap Analysis</h3>
         <GapTimeline gaps={edu.education_gaps} />
       </div>
 
       {/* Score breakdown */}
       {edu.score_breakdown && Object.keys(edu.score_breakdown).length > 0 && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-semibold text-slate-800">Education Score Breakdown</h3>
-            <span className="text-2xl font-bold text-blue-600">{edu.education_score ?? '—'}<span className="text-sm text-slate-400 font-normal">/100</span></span>
+        <div className="card" style={{ padding: '18px 20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+              Education Score Breakdown
+            </h3>
+            <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent)', letterSpacing: '-0.03em' }}>
+              {edu.education_score ?? 0}
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>/100</span>
+            </span>
           </div>
           <ScoreBreakdown breakdown={edu.score_breakdown} />
         </div>

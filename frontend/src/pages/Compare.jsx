@@ -195,7 +195,7 @@ export default function Compare() {
                         {label}
                       </td>
                       {details.map((c, i) => {
-                        const val   = c[key] ?? '—'
+                        const val   = c[key] ?? 'N/A'
                         const isMax = typeof val === 'number' && val === max && max > 0
                         return (
                           <td key={c.candidate_id} style={{

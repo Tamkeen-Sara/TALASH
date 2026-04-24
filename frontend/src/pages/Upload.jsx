@@ -54,9 +54,19 @@ export default function Upload() {
     if (!files.length || uploading) return
     setEvents([]); setDone(false); setUploading(true); setLoading(true)
     if (mode === 'bulk') {
+      let expected = null
+      let finished = 0
       abortRef.current = uploadBulkPDF(files[0], jd, payload => {
         setEvents(prev => { scrollLog(); return [...prev, payload] })
-        if (payload.status === 'error') onComplete()
+        if (payload.status === 'split_complete') {
+          expected = payload.count
+          if (expected === 0) onComplete()
+        }
+        if (payload.status === 'complete' || payload.status === 'error') {
+          finished++
+          if (expected !== null && finished >= expected) onComplete()
+        }
+        if (payload.status === 'error' && expected === null) onComplete()
       })
     } else {
       let completed = 0
@@ -71,7 +81,7 @@ export default function Upload() {
   }
 
   return (
-    <div style={{ maxWidth: 640, padding: '40px 40px' }}>
+    <div style={{ maxWidth: 640, padding: '40px 40px', margin: '0 auto' }}>
 
       {/* Header */}
       <div style={{ marginBottom: 32 }}>
@@ -249,11 +259,11 @@ export default function Upload() {
                   <span style={{ fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', width: 96, flexShrink: 0, color: meta.color }}>
                     {meta.label}
                   </span>
-                  {ev.candidate && <span style={{ color: 'var(--text-secondary)' }}>— {ev.candidate}</span>}
-                  {ev.file && !ev.candidate && <span style={{ color: 'var(--text-muted)' }}>— {ev.file}</span>}
-                  {ev.count !== undefined && <span style={{ color: 'var(--text-muted)' }}>— {ev.count} CVs detected</span>}
+                  {ev.candidate && <span style={{ color: 'var(--text-secondary)' }}>: {ev.candidate}</span>}
+                  {ev.file && !ev.candidate && <span style={{ color: 'var(--text-muted)' }}>: {ev.file}</span>}
+                  {ev.count !== undefined && <span style={{ color: 'var(--text-muted)' }}>: {ev.count} CVs detected</span>}
                   {ev.score !== undefined && <span style={{ color: meta.color }}>· score {ev.score}</span>}
-                  {ev.error && <span style={{ color: 'var(--error)' }}>— {ev.error}</span>}
+                  {ev.error && <span style={{ color: 'var(--error)' }}>: {ev.error}</span>}
                 </div>
               )
             })}
