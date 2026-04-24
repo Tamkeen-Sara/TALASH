@@ -4,30 +4,50 @@ from .education import EducationProfile
 from .research import ResearchProfile
 
 
+def _null_str(v):
+    if v is None:
+        return ""
+    if isinstance(v, str) and v.strip().lower() in ("null", "none"):
+        return ""
+    return v
+
+
+def _null_int(v):
+    if v is None:
+        return None
+    if isinstance(v, str) and v.strip().lower() in ("null", "none", ""):
+        return None
+    return v
+
+
 class EmploymentRecord(BaseModel):
-    job_title: str
-    organization: str
-    employment_type: Optional[str] = None  # full-time, part-time, contract
+    job_title: str = ""
+    organization: str = ""
+    employment_type: Optional[str] = None
     start_year: Optional[int] = None
     start_month: Optional[int] = None
     end_year: Optional[int] = None
     end_month: Optional[int] = None
     is_current: bool = False
     responsibilities: list[str] = []
-    seniority_score: Optional[int] = None  # computed: professor=10, intern=1
+    seniority_score: Optional[int] = None
     raw_text: str = ""
 
-    @field_validator("raw_text", mode="before")
+    @field_validator("job_title", "organization", "raw_text", mode="before")
     @classmethod
-    def coerce_none_str(cls, v):
-        return v if v is not None else ""
+    def coerce_strs(cls, v): return _null_str(v) if v is None or isinstance(v, str) else v
 
-    @field_validator("is_current", "responsibilities", mode="before")
+    @field_validator("start_year", "start_month", "end_year", "end_month", "seniority_score", mode="before")
     @classmethod
-    def coerce_none_defaults(cls, v, info):
-        if v is None:
-            return False if info.field_name == "is_current" else []
-        return v
+    def coerce_ints(cls, v): return _null_int(v)
+
+    @field_validator("is_current", mode="before")
+    @classmethod
+    def coerce_bool(cls, v): return False if v is None else v
+
+    @field_validator("responsibilities", mode="before")
+    @classmethod
+    def coerce_list(cls, v): return [] if v is None else v
 
 
 class EmploymentProfile(BaseModel):

@@ -2,20 +2,38 @@ from pydantic import BaseModel, model_validator
 from typing import Optional, Literal, Any
 
 
+def _clean(data: dict, str_fields=(), int_fields=(), bool_fields=(), list_fields=()):
+    """Coerce LLM nulls: 'null'/'none' strings → None/default, None bools → False."""
+    for f in str_fields:
+        v = data.get(f)
+        if v is None or (isinstance(v, str) and v.strip().lower() in ("null", "none")):
+            data[f] = ""
+    for f in int_fields:
+        v = data.get(f)
+        if isinstance(v, str) and v.strip().lower() in ("null", "none", ""):
+            data[f] = None
+    for f in bool_fields:
+        if data.get(f) is None:
+            data[f] = False
+    for f in list_fields:
+        if data.get(f) is None:
+            data[f] = []
+    return data
+
+
 class JournalPaper(BaseModel):
-    title: str
-    journal_name: str
+    title: str = ""
+    journal_name: str = ""
     year: Optional[int] = None
     doi: Optional[str] = None
     issn: Optional[str] = None
     authors: list[str] = []
     candidate_position: Optional[int] = None
     is_corresponding: bool = False
-    # Enriched by journal_verifier. Data comes from real APIs, not from the LLM.
     is_wos_indexed: Optional[bool] = None
     is_scopus_indexed: Optional[bool] = None
     impact_factor: Optional[float] = None
-    wos_quartile: Optional[str] = None  # Q1, Q2, Q3, Q4
+    wos_quartile: Optional[str] = None
     citation_count: Optional[int] = None
     influential_citation_count: Optional[int] = None
     verification_source: Optional[str] = None
@@ -26,27 +44,26 @@ class JournalPaper(BaseModel):
     @classmethod
     def coerce_nulls(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            for field in ("is_corresponding", "is_predatory_flag"):
-                if data.get(field) is None:
-                    data[field] = False
-            for field in ("authors",):
-                if data.get(field) is None:
-                    data[field] = []
+            _clean(data,
+                str_fields=("title", "journal_name"),
+                int_fields=("year", "candidate_position", "citation_count", "influential_citation_count"),
+                bool_fields=("is_corresponding", "is_predatory_flag"),
+                list_fields=("authors",),
+            )
         return data
 
 
 class ConferencePaper(BaseModel):
-    title: str
-    conference_name: str
+    title: str = ""
+    conference_name: str = ""
     year: Optional[int] = None
     authors: list[str] = []
     candidate_position: Optional[int] = None
     is_corresponding: bool = False
     proceedings_publisher: Optional[str] = None
-    # Enriched by conference_verifier
-    core_rank: Optional[str] = None  # A*, A, B, C, Unranked
+    core_rank: Optional[str] = None
     conference_edition: Optional[str] = None
-    conference_number: Optional[int] = None   # maturity check (spec §3.2.ii.b)
+    conference_number: Optional[int] = None
     is_scopus_indexed: Optional[bool] = None
     verification_source: Optional[str] = None
 
@@ -54,22 +71,23 @@ class ConferencePaper(BaseModel):
     @classmethod
     def coerce_nulls(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            if data.get("is_corresponding") is None:
-                data["is_corresponding"] = False
-            if data.get("authors") is None:
-                data["authors"] = []
+            _clean(data,
+                str_fields=("title", "conference_name"),
+                int_fields=("year", "candidate_position", "conference_number"),
+                bool_fields=("is_corresponding",),
+                list_fields=("authors",),
+            )
         return data
 
 
 class Book(BaseModel):
-    title: str
+    title: str = ""
     authors: list[str] = []
     isbn: Optional[str] = None
     publisher: Optional[str] = None
     year: Optional[int] = None
     online_link: Optional[str] = None
     candidate_role: Optional[str] = None
-    # Enriched by books_patents_agent
     is_verified: bool = False
     verification_source: Optional[str] = None
 
@@ -77,22 +95,23 @@ class Book(BaseModel):
     @classmethod
     def coerce_nulls(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            if data.get("is_verified") is None:
-                data["is_verified"] = False
-            if data.get("authors") is None:
-                data["authors"] = []
+            _clean(data,
+                str_fields=("title",),
+                int_fields=("year",),
+                bool_fields=("is_verified",),
+                list_fields=("authors",),
+            )
         return data
 
 
 class Patent(BaseModel):
     patent_number: Optional[str] = None
-    title: str
+    title: str = ""
     date: Optional[str] = None
     inventors: list[str] = []
     country: Optional[str] = None
     online_link: Optional[str] = None
     candidate_role: Optional[str] = None
-    # Enriched by patent_verifier
     is_verified: bool = False
     verification_source: Optional[str] = None
 
@@ -100,20 +119,33 @@ class Patent(BaseModel):
     @classmethod
     def coerce_nulls(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            if data.get("is_verified") is None:
-                data["is_verified"] = False
-            if data.get("inventors") is None:
-                data["inventors"] = []
+            _clean(data,
+                str_fields=("title",),
+                bool_fields=("is_verified",),
+                list_fields=("inventors",),
+            )
         return data
 
 
 class SupervisionRecord(BaseModel):
-    student_name: str
+    student_name: str = ""
     degree_level: Literal["MS", "PhD"]
     role: Literal["main", "co-supervisor"]
     year_graduated: Optional[int] = None
     thesis_title: Optional[str] = None
     publications_together: int = 0
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_nulls(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            _clean(data,
+                str_fields=("student_name",),
+                int_fields=("year_graduated", "publications_together"),
+            )
+            if data.get("publications_together") is None:
+                data["publications_together"] = 0
+        return data
 
 
 class ResearchProfile(BaseModel):
@@ -122,7 +154,6 @@ class ResearchProfile(BaseModel):
     books: list[Book] = []
     patents: list[Patent] = []
     supervision: list[SupervisionRecord] = []
-    # Computed metrics
     h_index: Optional[int] = None
     total_citations: Optional[int] = None
     q1_count: int = 0

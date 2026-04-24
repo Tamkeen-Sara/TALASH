@@ -42,8 +42,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory store for demo (replace with candidates.db in production)
-_candidates: dict = {}
+_STORE_FILE = Path("data/candidates.json")
+
+def _load_store() -> dict:
+    if _STORE_FILE.exists():
+        try:
+            from backend.schemas.candidate import CandidateProfile
+            raw = json.loads(_STORE_FILE.read_text(encoding="utf-8"))
+            return {k: CandidateProfile.model_validate(v) for k, v in raw.items()}
+        except Exception:
+            return {}
+    return {}
+
+def _save_store():
+    try:
+        _STORE_FILE.write_text(
+            json.dumps({k: v.model_dump() for k, v in _candidates.items()}, default=str, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+_candidates: dict = _load_store()
 
 
 @app.on_event("startup")
@@ -86,6 +106,7 @@ async def upload_cvs(files: list[UploadFile] = File(...), jd: str = Form("")):
 
                 # TODO: Add research_agent, employment_agent, and skill_agent.
                 _candidates[profile.candidate_id] = profile
+                _save_store()
                 yield f"data: {json.dumps({'status': 'complete', 'candidate': profile.full_name, 'id': profile.candidate_id})}\n\n"
 
             except Exception as e:
@@ -107,7 +128,7 @@ async def upload_bulk_pdf(file: UploadFile = File(...), jd: str = Form("")):
     async def event_stream():
         try:
             yield f"data: {json.dumps({'status': 'splitting', 'file': file.filename})}\n\n"
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             split_paths = await loop.run_in_executor(None, split_pdf_into_cvs, save_path)
             yield f"data: {json.dumps({'status': 'split_complete', 'count': len(split_paths)})}\n\n"
         except Exception as e:

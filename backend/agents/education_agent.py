@@ -34,8 +34,11 @@ def normalize_to_4_scale(value: float, scale: float = None, is_percentage: bool 
     return value
 
 
+_DEGREE_DURATION = {"PhD": 5, "MS": 2, "MPhil": 2, "MBA": 2, "BS": 4, "BE": 4, "BSc": 3}
+
+
 def detect_education_gaps(edu: EducationProfile, emp: EmploymentProfile) -> list[dict]:
-    """Use IntervalTree to find gaps between degrees, justify via employment."""
+    """Use IntervalTree to find gaps between milestones, justify via employment OR enrollment."""
     emp_tree = IntervalTree()
     for job in emp.records:
         s = job.start_year or 0
@@ -43,29 +46,48 @@ def detect_education_gaps(edu: EducationProfile, emp: EmploymentProfile) -> list
         if s < e:
             emp_tree.addi(s, e, job)
 
+    edu_tree = IntervalTree()
+    for d in edu.degrees:
+        s = d.start_year
+        e = d.end_year
+        if s and e and s < e:
+            edu_tree.addi(s, e, d)
+        elif e:
+            duration = _DEGREE_DURATION.get(d.level, 3)
+            edu_tree.addi(e - duration, e, d)
+
+    sse_yr = edu.sse.year if edu.sse else None
+    hse_yr = edu.hse.year if edu.hse else None
+    if sse_yr and hse_yr and sse_yr < hse_yr:
+        edu_tree.addi(sse_yr, hse_yr, "hse_enrollment")
+    elif hse_yr:
+        edu_tree.addi(hse_yr - 2, hse_yr, "hse_enrollment")
+
     years = set()
     for d in edu.degrees:
         if d.start_year:
             years.add(d.start_year)
         if d.end_year:
             years.add(d.end_year)
-    if edu.sse and edu.sse.year:
-        years.add(edu.sse.year)
-    if edu.hse and edu.hse.year:
-        years.add(edu.hse.year)
+    if sse_yr:
+        years.add(sse_yr)
+    if hse_yr:
+        years.add(hse_yr)
 
     sorted_years = sorted(years)
     gaps = []
     for i in range(len(sorted_years) - 1):
         gap = sorted_years[i + 1] - sorted_years[i]
         if gap > 1:
-            overlapping = emp_tree.overlap(sorted_years[i], sorted_years[i + 1])
+            overlapping_emp = emp_tree.overlap(sorted_years[i], sorted_years[i + 1])
+            overlapping_edu = edu_tree.overlap(sorted_years[i], sorted_years[i + 1])
+            justified = len(overlapping_emp) > 0 or len(overlapping_edu) > 0
             gaps.append({
                 "from_year": sorted_years[i],
                 "to_year": sorted_years[i + 1],
                 "duration_years": gap,
-                "justified": len(overlapping) > 0,
-                "justifying_roles": [o.data.job_title for o in overlapping],
+                "justified": justified,
+                "justifying_roles": [o.data.job_title for o in overlapping_emp],
             })
     return gaps
 
