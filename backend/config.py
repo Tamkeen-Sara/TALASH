@@ -3,8 +3,11 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    # API Keys
+    # API Keys — add multiple Groq keys (different accounts) separated by commas
+    # e.g. GROQ_API_KEYS=key1,key2,key3
+    # Falls back to GROQ_API_KEY if GROQ_API_KEYS is not set
     groq_api_key: str = ""
+    groq_api_keys: str = ""   # comma-separated list of keys for rotation
     core_api_key: str = ""
     semantic_scholar_api_key: str = ""
     polite_mailto: str = "talash@example.com"

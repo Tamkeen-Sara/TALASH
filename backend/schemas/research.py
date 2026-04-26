@@ -36,6 +36,7 @@ class JournalPaper(BaseModel):
     wos_quartile: Optional[str] = None
     citation_count: Optional[int] = None
     influential_citation_count: Optional[int] = None
+    resolved_journal_name: Optional[str] = None  # actual name from OpenAlex (may differ from CV)
     verification_source: Optional[str] = None
     is_predatory_flag: bool = False
     predatory_reason: Optional[str] = None
@@ -62,10 +63,13 @@ class ConferencePaper(BaseModel):
     is_corresponding: bool = False
     proceedings_publisher: Optional[str] = None
     core_rank: Optional[str] = None
+    scimago_quartile: Optional[str] = None          # Q1–Q4 from Scimago proceedings
+    conference_publisher: Optional[str] = None      # IEEE / ACM / Springer etc.
     conference_edition: Optional[str] = None
     conference_number: Optional[int] = None
     is_scopus_indexed: Optional[bool] = None
     verification_source: Optional[str] = None
+    resolved_conference_name: Optional[str] = None  # full name from CORE/DBLP/Scimago
 
     @model_validator(mode="before")
     @classmethod

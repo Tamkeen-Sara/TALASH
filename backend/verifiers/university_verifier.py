@@ -1,309 +1,661 @@
 """
-University Ranking Verifier
-- Curated QS/THE rankings dataset seeded into SQLite at startup
-- RapidFuzz token_sort_ratio matching (threshold 75%)
-- Handles abbreviations: 'FAST-NUCES' vs 'National University of Computer and Emerging Sciences'
+University Verifier — Production Grade
+
+Pipeline per institution:
+  1. SQLite cache        (instant, 90-day TTL)
+  2. ROR API             (ror.org — 110k+ institutions, free, resolves name aliases)
+  3. OpenAlex            (real-time h-index, citations, research output per institution)
+                         Computes quality tier from actual academic output data.
+  4. QS rank lookup      (from curated CSV or seed data — supplementary, annual)
+  5. Unranked / Unknown
+
+Why OpenAlex instead of just QS:
+  - OpenAlex updates continuously from actual publication data
+  - QS = 40% employer surveys + 40% academic reputation polls (subjective)
+  - OpenAlex covers every institution that has published — QS only ranks ~1400
+  - Quality tier from h-index/citations is more objective for academic hiring
+
+The QS CSV (data/qs_rankings.csv) is optional — if present it adds the rank number.
+It does NOT drive recognition or quality tier — OpenAlex does that.
 """
-import sqlite3
 import asyncio
+import aiohttp
+import csv
+import json
+import sqlite3
+import urllib.parse
 from pathlib import Path
 from rapidfuzz import fuzz, process
 from backend.config import settings
 from backend.schemas.education import DegreeRecord
 
-_RANKINGS_DB = "data/university_rankings.db"
-_rankings_cache: list[dict] = []
+_RANKINGS_DB  = "data/university_rankings.db"
+_QS_CSV_PATH  = "data/qs_rankings.xlsx"
+_ROR_API      = "https://api.ror.org/organizations"
+_OPENALEX_ROR = "https://api.openalex.org/institutions?filter=ror:{ror_id}&mailto={mailto}"
+_OPENALEX_NAME= "https://api.openalex.org/institutions?search={name}&mailto={mailto}&per_page=1"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Curated QS World University Rankings 2024 (top 200 global plus all Pakistani)
-# Source: QS World University Rankings 2024 (public data)
-# Format: (full_name, qs_rank, the_rank)
-# ─────────────────────────────────────────────────────────────────────────────
-_QS_DATA: list[tuple] = [
-    # Top 50 Global
-    ("Massachusetts Institute of Technology", 1, 5),
-    ("University of Cambridge", 2, 3),
-    ("University of Oxford", 3, 1),
-    ("Harvard University", 4, 4),
-    ("Stanford University", 5, 2),
-    ("Imperial College London", 6, 11),
-    ("ETH Zurich", 7, 10),
-    ("National University of Singapore", 8, 19),
-    ("University College London", 9, 22),
-    ("University of California Berkeley", 10, 6),
-    ("University of Chicago", 11, 13),
-    ("University of Pennsylvania", 12, 14),
-    ("Cornell University", 13, 20),
-    ("Peking University", 14, 17),
-    ("Yale University", 14, 9),
-    ("Tsinghua University", 16, 16),
-    ("Columbia University", 22, 12),
-    ("Princeton University", 17, 7),
-    ("University of Michigan", 23, 21),
-    ("Johns Hopkins University", 24, 8),
-    ("University of Toronto", 21, 18),
-    ("Nanyang Technological University", 26, 55),
-    ("University of Edinburgh", 22, 30),
-    ("McGill University", 30, 46),
-    ("Australian National University", 34, 62),
-    ("University of Melbourne", 33, 33),
-    ("King's College London", 40, 35),
-    ("University of Sydney", 19, 60),
-    ("Kyoto University", 46, 55),
-    ("University of Tokyo", 28, 39),
-    ("Seoul National University", 41, 62),
-    ("Hong Kong University of Science and Technology", 40, 93),
-    ("University of Hong Kong", 26, 36),
-    ("Delft University of Technology", 47, None),
-    ("University of Amsterdam", 55, 56),
-    ("Technical University of Munich", 37, 30),
-    ("Heidelberg University", 87, 43),
-    ("London School of Economics", 45, None),
-    ("University of Manchester", 32, 51),
-    ("University of Bristol", 54, None),
-    ("Georgia Institute of Technology", 88, None),
-    ("Carnegie Mellon University", 52, None),
-    ("New York University", 38, None),
-    ("University of California Los Angeles", 44, 15),
-    ("University of California San Diego", 60, None),
-    ("Duke University", 65, 18),
-    ("Northwestern University", 55, 24),
-    ("University of Wisconsin Madison", 79, None),
-    ("University of Illinois Urbana Champaign", 72, None),
-    ("Purdue University", 99, None),
-    # 51-200 Global (selective)
-    ("University of Glasgow", 73, None),
-    ("University of Birmingham", 84, None),
-    ("University of Sheffield", 97, None),
-    ("University of Warwick", 67, None),
-    ("University of Leeds", 86, None),
-    ("University of Nottingham", 100, None),
-    ("University of Southampton", 91, None),
-    ("University of Reading", None, None),
-    ("University of Lancaster", None, None),
-    ("University of Bath", None, None),
-    ("Monash University", 57, None),
-    ("University of Queensland", 47, None),
-    ("University of New South Wales", 19, None),
-    ("University of Western Australia", 90, None),
-    ("Maastricht University", None, None),
-    ("Eindhoven University of Technology", None, None),
-    ("KU Leuven", 70, None),
-    ("Ghent University", None, None),
-    ("Uppsala University", None, None),
-    ("Lund University", None, None),
-    ("University of Copenhagen", 97, None),
-    ("Aarhus University", None, None),
-    ("University of Helsinki", None, None),
-    ("University of Oslo", None, None),
-    ("University of Bergen", None, None),
-    ("University of Zurich", 83, None),
-    ("École Polytechnique", None, None),
-    ("Paris Sciences et Lettres", None, None),
-    ("Sorbonne University", None, None),
-    ("Technical University of Berlin", None, None),
-    ("RWTH Aachen University", None, None),
-    ("Humboldt University of Berlin", None, None),
-    ("Free University of Berlin", None, None),
-    ("University of Munich", None, None),
-    ("University of Bonn", None, None),
-    ("University of Freiburg", None, None),
-    ("Fudan University", 50, None),
-    ("Shanghai Jiao Tong University", 51, None),
-    ("Zhejiang University", 47, None),
-    ("University of Science and Technology of China", 65, None),
-    ("Wuhan University", None, None),
-    ("Sun Yat-sen University", None, None),
-    ("Indian Institute of Technology Bombay", 149, None),
-    ("Indian Institute of Technology Delhi", 150, None),
-    ("Indian Institute of Technology Madras", 285, None),
-    ("Indian Institute of Technology Kanpur", 263, None),
-    ("Indian Institute of Technology Kharagpur", 271, None),
-    ("Indian Institute of Science Bangalore", 225, None),
-    ("University of Tehran", None, None),
-    ("Sharif University of Technology", None, None),
-    ("University of Cape Town", 226, None),
-    ("University of Johannesburg", None, None),
-    ("American University of Beirut", None, None),
-    ("King Abdullah University of Science and Technology", 186, None),
-    ("King Abdulaziz University", 149, None),
-    ("Qatar University", None, None),
-    ("University of Jordan", None, None),
-    ("Cairo University", None, None),
-    ("University of São Paulo", 104, None),
-    ("Pontifical Catholic University of Chile", None, None),
-    ("University of Chile", None, None),
-    # ─── Pakistani Universities (full coverage) ───────────────────────────────
-    ("Quaid-i-Azam University", 801, None),
-    ("University of the Punjab", None, None),
-    ("University of Karachi", None, None),
-    ("University of Peshawar", None, None),
-    ("University of Sindh", None, None),
-    ("University of Balochistan", None, None),
-    ("National University of Sciences and Technology", 401, None),
-    ("NUST", 401, None),
-    ("COMSATS University Islamabad", None, None),
-    ("COMSATS Institute of Information Technology", None, None),
-    ("Lahore University of Management Sciences", 601, None),
-    ("LUMS", 601, None),
-    ("Institute of Business Administration Karachi", None, None),
-    ("IBA Karachi", None, None),
-    ("University of Engineering and Technology Lahore", None, None),
-    ("UET Lahore", None, None),
-    ("University of Engineering and Technology Taxila", None, None),
-    ("UET Taxila", None, None),
-    ("National University of Computer and Emerging Sciences", None, None),
-    ("FAST National University", None, None),
-    ("FAST-NUCES", None, None),
-    ("FAST NUCES", None, None),
-    ("Air University", None, None),
-    ("Bahria University", None, None),
-    ("Capital University of Science and Technology", None, None),
-    ("CUST", None, None),
-    ("Aga Khan University", None, None),
-    ("Aga Khan University Hospital", None, None),
-    ("Dow University of Health Sciences", None, None),
-    ("King Edward Medical University", None, None),
-    ("Army Medical College", None, None),
-    ("National Defence University", None, None),
-    ("Pakistan Institute of Engineering and Applied Sciences", 801, None),
-    ("PIEAS", 801, None),
-    ("Institute of Space Technology", None, None),
-    ("IST", None, None),
-    ("Ghulam Ishaq Khan Institute", None, None),
-    ("GIK Institute", None, None),
-    ("GIKI", None, None),
-    ("International Islamic University Islamabad", None, None),
-    ("IIUI", None, None),
-    ("Riphah International University", None, None),
-    ("Virtual University of Pakistan", None, None),
-    ("Allama Iqbal Open University", None, None),
-    ("University of Agriculture Faisalabad", None, None),
-    ("University of Veterinary and Animal Sciences", None, None),
-    ("Fatima Jinnah Women University", None, None),
-    ("Hazara University", None, None),
-    ("Islamia University of Bahawalpur", None, None),
-    ("Khyber Medical University", None, None),
-    ("Pir Mehr Ali Shah Arid Agriculture University", None, None),
-    ("University of Gujrat", None, None),
-    ("University of Lahore", None, None),
-    ("University of Central Punjab", None, None),
-    ("Superior University", None, None),
-    ("Forman Christian College", None, None),
-    ("Government College University Lahore", None, None),
-    ("Government College University Faisalabad", None, None),
-    ("University of Sargodha", None, None),
-    ("University of Azad Jammu and Kashmir", None, None),
-    ("Muhammad Ali Jinnah University", None, None),
-    ("Hamdard University", None, None),
-    ("Ziauddin University", None, None),
-    ("Beaconhouse National University", None, None),
-    ("Namal University", None, None),
-    ("Sukkur IBA University", None, None),
-    ("Mehran University of Engineering and Technology", None, None),
-    ("NED University of Engineering and Technology", None, None),
-    ("NED University", None, None),
-    ("Sir Syed University of Engineering and Technology", None, None),
-    ("SSUET", None, None),
-    ("Dawood University of Engineering and Technology", None, None),
-    ("Indus University", None, None),
-    ("Iqra University", None, None),
-    ("Foundation University Islamabad", None, None),
-    ("Army Public College of Management and Sciences", None, None),
-    ("APCOMS", None, None),
-    ("National Textile University", None, None),
-    ("University of Information Technology", None, None),
-    ("Information Technology University", None, None),
-    ("ITU Lahore", None, None),
-    ("Lahore Leads University", None, None),
-    ("Preston University", None, None),
-    ("Karachi Institute of Technology and Entrepreneurship", None, None),
-    ("KITE University", None, None),
-    ("University of Turbat", None, None),
-    ("Women University Multan", None, None),
-    ("Khwaja Fareed University of Engineering and IT", None, None),
-    ("Muhammad Nawaz Sharif University of Agriculture", None, None),
-    ("PMAS Arid Agriculture University Rawalpindi", None, None),
-    ("Shaheed Zulfikar Ali Bhutto Institute of Science and Technology", None, None),
-    ("SZABIST", None, None),
-    ("University of South Asia", None, None),
-]
+_qs_cache: dict[str, int] = {}       # canonical_name → qs_rank
+_db_cache: dict[str, dict] = {}      # institution name → full result (in-process cache)
 
 
-def _load_rankings() -> list[dict]:
-    """Load rankings from SQLite into memory (cached after first load)."""
-    global _rankings_cache
-    if _rankings_cache:
-        return _rankings_cache
-    db = Path(_RANKINGS_DB)
-    if not db.exists():
-        return []
-    with sqlite3.connect(_RANKINGS_DB) as conn:
-        rows = conn.execute(
-            "SELECT name, qs_rank, the_rank FROM university_rankings"
-        ).fetchall()
-    _rankings_cache = [{"name": r[0], "qs_rank": r[1], "the_rank": r[2]} for r in rows]
-    return _rankings_cache
+# ─── Quality tier from OpenAlex metrics ───────────────────────────────────────
+# Based on actual research output: h-index of the institution's full body of work.
+# These thresholds are calibrated to roughly correlate with global standing.
 
+def _quality_tier_from_metrics(h_index: int, works_count: int, cited_by_count: int) -> dict:
+    """
+    Compute a research quality tier from OpenAlex institution metrics.
+    Calibrated against real OpenAlex values:
+      MIT ~1200, Oxford ~900, NUST ~180, COMSATS ~80, IST ~30
+    Returns tier label, approximate QS band, and the raw metrics.
+    """
+    if h_index >= 800 or cited_by_count >= 50_000_000:
+        tier, band = "Elite",     "Global Top 50"
+    elif h_index >= 500 or cited_by_count >= 15_000_000:
+        tier, band = "Excellent", "Global Top 200"
+    elif h_index >= 300 or cited_by_count >= 5_000_000:
+        tier, band = "Strong",    "Global Top 500"
+    elif h_index >= 150 or cited_by_count >= 1_000_000:
+        tier, band = "Good",      "Global Top 1000"
+    elif h_index >= 50  or cited_by_count >= 100_000:
+        tier, band = "Recognized","Nationally Ranked"
+    elif works_count >= 200:
+        tier, band = "Known",     "HEC Recognized"
+    else:
+        tier, band = "Known",     "Recognized Institution"
 
-def lookup_university(name: str) -> dict:
-    """Fuzzy-match a university name against QS/THE database."""
-    rankings = _load_rankings()
-    if not rankings:
-        return {"qs_rank": None, "the_rank": None, "matched_name": None}
-
-    names = [r["name"] for r in rankings]
-    result = process.extractOne(
-        name,
-        names,
-        scorer=fuzz.token_sort_ratio,
-        score_cutoff=settings.university_fuzzy_threshold
-    )
-    if result is None:
-        return {"qs_rank": None, "the_rank": None, "matched_name": None}
-
-    matched_name, score, idx = result
-    matched = rankings[idx]
     return {
-        "qs_rank": matched["qs_rank"],
-        "the_rank": matched["the_rank"],
-        "matched_name": matched_name,
-        "match_score": score,
+        "quality_tier": tier,
+        "quality_band": band,
+        "h_index":      h_index,
+        "works_count":  works_count,
+        "cited_by_count": cited_by_count,
     }
 
 
+# ─── QS data helpers ──────────────────────────────────────────────────────────
+
+def _parse_rank(val) -> int | None:
+    """
+    Parse rank value from Excel or CSV.
+    Handles: 664, 664.0, "664", "664.0", "801-1000", "1001+", "=664"
+    Excel stores numbers as floats — "664.0" is the common case.
+    """
+    if val is None or val == "":
+        return None
+    # Already numeric (openpyxl returns int/float for number cells)
+    if isinstance(val, (int, float)):
+        v = int(val)
+        return v if v > 0 else None
+    val = str(val).strip().lstrip("=#▲▼ ")  # strip QS indicator symbols
+    if not val:
+        return None
+    # Float string like "664.0"
+    try:
+        return int(float(val))
+    except ValueError:
+        pass
+    # Range like "801-1000" or "801–1000"
+    import re
+    m = re.match(r"(\d+)\s*[-–]\s*(\d+)", val)
+    if m:
+        return (int(m.group(1)) + int(m.group(2))) // 2
+    # "1001+" style
+    m2 = re.match(r"(\d+)\+", val)
+    if m2:
+        return int(m2.group(1)) + 50
+    return None
+
+
+def _parse_float(val: str) -> float | None:
+    try:
+        return float(str(val).strip()) if val and str(val).strip() else None
+    except (ValueError, TypeError):
+        return None
+
+
+# Column name aliases — QS uses different column names across years
+_COL_ALIASES = {
+    "name":                   ["Institution", "institution", "Name", "name", "University"],
+    "qs_rank":                ["2026", "2025", "2024", "Rank", "rank", "qs_rank", "Overall Rank"],
+    "overall":                ["Overall", "overall", "Overall Score", "Score"],
+    "academic_reputation":    ["Academic Reputation", "Academic Rep", "AR"],
+    "employer_reputation":    ["Employer Reputation", "Employer Rep", "ER"],
+    "citations_per_faculty":  ["Citations per Faculty", "Citations/Faculty", "CPF", "CF"],
+    "faculty_student":        ["Faculty Student", "Faculty/Student", "FSR"],
+    "international_faculty":  ["International Faculty", "IFR"],
+    "international_students": ["International Students", "ISR"],
+}
+
+
+def _find_col(headers: list[str], aliases: list[str]) -> str | None:
+    """Return first header that matches any alias.
+    Tries exact match first, then case-insensitive partial containment.
+    Strips leading/trailing whitespace and internal newlines from headers.
+    """
+    cleaned = [h.replace("\n", " ").strip() for h in headers]
+    # Exact match (case-insensitive)
+    for alias in aliases:
+        for orig, h in zip(headers, cleaned):
+            if h.lower() == alias.lower():
+                return orig
+    # Partial containment
+    for alias in aliases:
+        for orig, h in zip(headers, cleaned):
+            if alias.lower() in h.lower() or h.lower() in alias.lower():
+                return orig
+    return None
+
+
+def _load_qs_data():
+    """Load QS data from CSV (all columns) or fall back to seed data."""
+    global _qs_cache
+    if _qs_cache:
+        return
+
+    csv_path = Path(_QS_CSV_PATH)
+
+    if csv_path.exists():
+        try:
+            # Try reading as Excel first, then CSV
+            suffix = csv_path.suffix.lower()
+            if suffix in (".xlsx", ".xls"):
+                try:
+                    import openpyxl
+                    wb       = openpyxl.load_workbook(csv_path, data_only=True)
+                    ws       = wb.active
+                    rows_raw = list(ws.iter_rows(values_only=True))
+
+                    # QS Excel has complex multi-row headers — find the row that
+                    # contains BOTH a rank-like column AND "Institution"
+                    header_idx = 0
+                    for i, row in enumerate(rows_raw[:15]):
+                        cells = [str(c or "").strip() for c in row]
+                        has_inst = any("institution" in c.lower() or c.lower() == "name"
+                                       for c in cells)
+                        has_rank = any(c in ("2026","2025","2024","Rank","rank") or
+                                       "rank" in c.lower() for c in cells)
+                        if has_inst and has_rank:
+                            header_idx = i
+                            break
+                        elif has_inst:
+                            header_idx = i
+                            break
+
+                    headers = [str(c or "").strip() for c in rows_raw[header_idx]]
+                    # Skip blank headers (merged cells leave empty strings)
+                    # Give blank headers a placeholder so zip works correctly
+                    headers = [h if h else f"_col{i}" for i, h in enumerate(headers)]
+
+                    data_rows = []
+                    for row in rows_raw[header_idx + 1:]:
+                        # Keep raw values (int/float) so _parse_rank handles them correctly.
+                        # Only stringify None → empty string for string fields.
+                        cells = [c if c is not None else "" for c in row]
+                        if not any(str(c).strip() for c in cells):
+                            continue  # skip blank rows
+                        data_rows.append(dict(zip(headers, cells)))
+
+                except ImportError:
+                    print("[university_verifier] openpyxl not installed, trying as CSV.")
+                    data_rows = []
+            else:
+                with open(csv_path, newline="", encoding="utf-8-sig") as f:
+                    reader = csv.DictReader(f)
+                    data_rows = list(reader)
+
+            if data_rows:
+                headers = list(data_rows[0].keys())
+                print(f"[university_verifier] Excel headers ({len(headers)}): "
+                      f"{[h for h in headers if h and not h.startswith('_col')]}")
+                col_name  = _find_col(headers, _COL_ALIASES["name"])
+                col_rank  = _find_col(headers, _COL_ALIASES["qs_rank"])
+                col_over  = _find_col(headers, _COL_ALIASES["overall"])
+                col_ar    = _find_col(headers, _COL_ALIASES["academic_reputation"])
+                col_cpf   = _find_col(headers, _COL_ALIASES["citations_per_faculty"])
+                print(f"[university_verifier] Detected columns — name:{col_name!r} "
+                      f"rank:{col_rank!r} overall:{col_over!r} "
+                      f"acad_rep:{col_ar!r} cit_fac:{col_cpf!r}")
+
+                loaded = 0
+                for row in data_rows:
+                    name = (row.get(col_name) or "").strip() if col_name else ""
+                    rank = _parse_rank(row.get(col_rank, "")) if col_rank else None
+                    if not name or not rank:
+                        continue
+                    _qs_cache[name] = {
+                        "qs_rank":                rank,
+                        "overall":                _parse_float(row.get(col_over))  if col_over else None,
+                        "academic_reputation":    _parse_float(row.get(col_ar))    if col_ar   else None,
+                        "citations_per_faculty":  _parse_float(row.get(col_cpf))   if col_cpf  else None,
+                    }
+                    loaded += 1
+                print(f"[university_verifier] Loaded {loaded} universities from {csv_path.name}")
+                return
+        except Exception as e:
+            print(f"[university_verifier] QS CSV/Excel load failed: {e}")
+
+    # Seed fallback
+    seed = [
+        ("Massachusetts Institute of Technology", 1),
+        ("University of Cambridge", 2),
+        ("University of Oxford", 3),
+        ("Harvard University", 4),
+        ("Stanford University", 5),
+        ("Imperial College London", 6),
+        ("ETH Zurich", 7),
+        ("National University of Singapore", 8),
+        ("University College London", 9),
+        ("University of California Berkeley", 10),
+        ("Carnegie Mellon University", 52),
+        ("Cornell University", 13),
+        ("Princeton University", 17),
+        ("Columbia University", 22),
+        ("University of Toronto", 21),
+        ("University of Michigan", 23),
+        ("Johns Hopkins University", 24),
+        ("Nanyang Technological University", 26),
+        ("University of Edinburgh", 22),
+        ("University of Manchester", 32),
+        ("University of Melbourne", 33),
+        ("Australian National University", 34),
+        ("Kyoto University", 46),
+        ("University of Tokyo", 28),
+        ("Seoul National University", 41),
+        ("Peking University", 14),
+        ("Tsinghua University", 16),
+        ("Indian Institute of Technology Bombay", 149),
+        ("Indian Institute of Technology Delhi", 150),
+        ("Indian Institute of Science Bangalore", 225),
+        ("University of Cape Town", 226),
+        ("National University of Sciences and Technology", 391),
+        ("Lahore University of Management Sciences", 631),
+        ("Quaid-i-Azam University", 871),
+        ("COMSATS University Islamabad", 981),
+        ("Pakistan Institute of Engineering and Applied Sciences", 801),
+    ]
+    for name, rank in seed:
+        _qs_cache[name] = {"qs_rank": rank, "overall": None,
+                           "academic_reputation": None, "citations_per_faculty": None}
+    print(f"[university_verifier] Using seed data: {len(_qs_cache)} universities.")
+
+
+def _qs_lookup(canonical_name: str) -> dict:
+    """Fuzzy-match canonical name against QS data. Returns full QS entry dict."""
+    _load_qs_data()
+    if not _qs_cache:
+        return {}
+    names  = list(_qs_cache.keys())
+    result = process.extractOne(
+        canonical_name, names,
+        scorer=fuzz.token_set_ratio,
+        score_cutoff=settings.university_fuzzy_threshold,
+    )
+    if result:
+        matched_name, score, _ = result
+        data = _qs_cache[matched_name]
+        print(f"[QS] '{canonical_name}' → '{matched_name}' (score={score}) rank={data.get('qs_rank')}")
+        return data
+    print(f"[QS] '{canonical_name}' → no match found")
+    return {}
+
+
+# ─── ROR API ──────────────────────────────────────────────────────────────────
+
+def _clean_institution_name(name: str) -> str:
+    """
+    Strip campus/branch suffixes before querying ROR.
+    'COMSATS University Islamabad, Abbottabad Campus' → 'COMSATS University Islamabad'
+    """
+    import re
+    # Remove everything after a comma that contains campus/branch keywords
+    cleaned = re.sub(
+        r',?\s*(abbottabad|attock|lahore|wah|sahiwal|vehari|campus|branch|'
+        r'constituent college|city campus|main campus|satellite)\b.*',
+        '', name, flags=re.IGNORECASE
+    ).strip()
+    # Remove any trailing comma left after stripping (e.g. "COMSATS University, Islamabad,")
+    cleaned = cleaned.rstrip(',').strip()
+    return cleaned or name
+
+
+async def _ror_lookup(name: str) -> dict:
+    """
+    Real-time institution name resolution via ROR.
+    Handles: aliases, campus suffixes, abbreviations, non-English names.
+    Returns canonical name + ROR ID.
+    """
+    # Try with cleaned name first, fall back to original if no result
+    cleaned = _clean_institution_name(name)
+    query   = cleaned if cleaned != name else name
+    try:
+        params = urllib.parse.urlencode({"affiliation": query})
+        url = f"{_ROR_API}?{params}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                timeout=aiohttp.ClientTimeout(total=7),
+                headers={"User-Agent": "TALASH/1.0 (academic-hiring; mailto:talash@seecs.edu.pk)"},
+            ) as r:
+                if r.status != 200:
+                    return {}
+                data = await r.json()
+                items = data.get("items", [])
+                if items:
+                    best = items[0]
+                    org  = best.get("organization", {})
+                    return {
+                        "canonical_name": org.get("name"),
+                        "country":        org.get("country", {}).get("country_name"),
+                        "types":          org.get("types", []),
+                        "ror_id":         org.get("id", "").replace("https://ror.org/", ""),
+                        "confidence":     best.get("score", 0),
+                    }
+
+                # No result with cleaned name — retry with original full name
+                if query != name:
+                    params2 = urllib.parse.urlencode({"affiliation": name})
+                    async with session.get(
+                        f"{_ROR_API}?{params2}",
+                        timeout=aiohttp.ClientTimeout(total=7),
+                        headers={"User-Agent": "TALASH/1.0 (academic-hiring)"},
+                    ) as r2:
+                        if r2.status == 200:
+                            data2  = await r2.json()
+                            items2 = data2.get("items", [])
+                            if items2:
+                                best = items2[0]
+                                org  = best.get("organization", {})
+                                return {
+                                    "canonical_name": org.get("name"),
+                                    "country":        org.get("country", {}).get("country_name"),
+                                    "types":          org.get("types", []),
+                                    "ror_id":         org.get("id", "").replace("https://ror.org/", ""),
+                                    "confidence":     best.get("score", 0),
+                                }
+    except Exception as e:
+        print(f"[university_verifier] ROR error for '{name}': {e}")
+    return {}
+
+
+# ─── OpenAlex institutions ─────────────────────────────────────────────────────
+
+async def _openalex_by_ror(session: aiohttp.ClientSession, ror_id: str) -> dict:
+    try:
+        url = _OPENALEX_ROR.format(ror_id=ror_id, mailto=settings.polite_mailto)
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+            if r.status == 200:
+                results = (await r.json()).get("results", [])
+                if results:
+                    return _parse_openalex_institution(results[0])
+    except Exception:
+        pass
+    return {}
+
+
+async def _openalex_by_name(session: aiohttp.ClientSession, name: str) -> dict:
+    try:
+        url = _OPENALEX_NAME.format(
+            name=urllib.parse.quote(name), mailto=settings.polite_mailto
+        )
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+            if r.status == 200:
+                results = (await r.json()).get("results", [])
+                if results:
+                    return _parse_openalex_institution(results[0])
+    except Exception:
+        pass
+    return {}
+
+
+def _parse_openalex_institution(inst: dict) -> dict:
+    stats = inst.get("summary_stats") or {}
+    return {
+        "openalex_id":    inst.get("id"),
+        "display_name":   inst.get("display_name"),
+        "country_code":   inst.get("country_code"),
+        "type":           inst.get("type"),
+        "h_index":        stats.get("h_index") or 0,
+        "works_count":    inst.get("works_count") or 0,
+        "cited_by_count": inst.get("cited_by_count") or 0,
+    }
+
+
+# ─── SQLite cache ─────────────────────────────────────────────────────────────
+
+def _init_db():
+    Path(_RANKINGS_DB).parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(_RANKINGS_DB) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS university_cache (
+                name       TEXT PRIMARY KEY,
+                result_json TEXT NOT NULL,
+                fetched_at  REAL NOT NULL
+            )
+        """)
+        conn.commit()
+
+
+def _db_get(name: str, ttl_days: int = 90) -> dict | None:
+    import time
+    try:
+        with sqlite3.connect(_RANKINGS_DB) as conn:
+            row = conn.execute(
+                "SELECT result_json, fetched_at FROM university_cache WHERE name=?", (name,)
+            ).fetchone()
+        if row:
+            result, fetched_at = row
+            if (time.time() - fetched_at) < ttl_days * 86400:
+                return json.loads(result)
+    except Exception:
+        pass
+    return None
+
+
+def _db_set(name: str, result: dict):
+    import time
+    try:
+        with sqlite3.connect(_RANKINGS_DB) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO university_cache VALUES (?, ?, ?)",
+                (name, json.dumps(result), time.time())
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
+# ─── Main lookup ──────────────────────────────────────────────────────────────
+
+async def lookup_university(name: str) -> dict:
+    """
+    Full production pipeline:
+    1. SQLite cache  → instant hit if recently looked up
+                       QS rank is ALWAYS refreshed from current in-memory cache even on hit
+                       (so new QS Excel files take effect without cache invalidation)
+    2. ROR           → canonical name resolution + ROR ID
+    3. OpenAlex      → institution h-index, citation count, research output tier
+    4. QS CSV        → add exact rank number if available
+    """
+    if not name or not name.strip():
+        return {"qs_rank": None, "the_rank": None, "recognized": False}
+
+    # In-process cache (avoid duplicate API calls within one upload batch)
+    if name in _db_cache:
+        return _db_cache[name]
+
+    # When two degrees are from different campuses of the same institution
+    # (e.g. "COMSATS University, Islamabad, Attock Campus" and "... Abbottabad Campus"),
+    # asyncio.gather() launches both concurrently. The campus suffix is stripped before
+    # the ROR lookup, so both ultimately resolve to the same canonical institution.
+    # If the cleaned name is already in the in-process cache, reuse that result instead
+    # of making a duplicate API call that might get rate-limited.
+    cleaned = _clean_institution_name(name)
+    if cleaned != name:
+        if cleaned in _db_cache:
+            _db_cache[name] = _db_cache[cleaned]
+            return _db_cache[name]
+        cached_clean = _db_get(cleaned)
+        if cached_clean:
+            canonical = cached_clean.get("canonical_name") or cleaned
+            qs_data = _qs_lookup(canonical)
+            if qs_data:
+                cached_clean["qs_rank"]                  = qs_data.get("qs_rank")
+                cached_clean["qs_overall_score"]         = qs_data.get("overall")
+                cached_clean["qs_academic_reputation"]   = qs_data.get("academic_reputation")
+                cached_clean["qs_citations_per_faculty"] = qs_data.get("citations_per_faculty")
+                _db_set(cleaned, cached_clean)
+            _db_cache[name] = cached_clean
+            return cached_clean
+
+    # SQLite cache — use for expensive API results (ROR/OpenAlex) but always
+    # re-apply QS rank from current in-memory _qs_cache so stale ranks self-heal.
+    cached = _db_get(name)
+    if cached:
+        # A completely failed previous result (no API data, no QS rank) should be
+        # retried rather than served stale.  This handles rate-limited concurrent lookups
+        # that got cached as empty results.
+        completely_failed = (
+            not cached.get("recognized")
+            and not cached.get("quality_tier")
+            and not cached.get("qs_rank")
+        )
+        if completely_failed:
+            pass  # fall through to fresh API lookup below
+        else:
+            canonical = cached.get("canonical_name") or name
+            qs_data = _qs_lookup(canonical)
+            if qs_data:
+                cached["qs_rank"]                  = qs_data.get("qs_rank")
+                cached["qs_overall_score"]         = qs_data.get("overall")
+                cached["qs_academic_reputation"]   = qs_data.get("academic_reputation")
+                cached["qs_citations_per_faculty"] = qs_data.get("citations_per_faculty")
+                cached["recognized"]               = True   # QS knows it → it is recognized
+                _db_set(name, cached)
+            _db_cache[name] = cached
+            return cached
+
+    result = {
+        "qs_rank":       None,
+        "the_rank":      None,
+        "recognized":    False,
+        "canonical_name": name,
+        "country":       None,
+        "ror_id":        None,
+        "quality_tier":  None,
+        "quality_band":  None,
+        "h_index":       None,
+        "works_count":   None,
+        "cited_by_count": None,
+    }
+
+    # Step 1: ROR — name resolution
+    ror = await _ror_lookup(name)
+    canonical = name
+    if ror.get("canonical_name"):
+        canonical               = ror["canonical_name"]
+        result["canonical_name"] = canonical
+        result["country"]        = ror.get("country")
+        result["ror_id"]         = ror.get("ror_id")
+        result["recognized"]     = True
+
+    # Step 2: OpenAlex — real-time institution metrics
+    async with aiohttp.ClientSession() as session:
+        oa = {}
+        if result["ror_id"]:
+            oa = await _openalex_by_ror(session, result["ror_id"])
+        if not oa and canonical:
+            oa = await _openalex_by_name(session, canonical)
+
+    if oa:
+        result["recognized"]    = True
+        result["works_count"]   = oa.get("works_count")
+        result["cited_by_count"] = oa.get("cited_by_count")
+        result["h_index"]       = oa.get("h_index")
+        if not result["country"] and oa.get("country_code"):
+            result["country"]   = oa["country_code"]
+        tier = _quality_tier_from_metrics(
+            oa.get("h_index") or 0,
+            oa.get("works_count") or 0,
+            oa.get("cited_by_count") or 0,
+        )
+        result.update(tier)
+
+    # Step 3: QS data — rank + additional scores if available
+    qs_data = _qs_lookup(canonical)
+    if qs_data:
+        result["qs_rank"]                  = qs_data.get("qs_rank")
+        result["qs_overall_score"]         = qs_data.get("overall")
+        result["qs_academic_reputation"]   = qs_data.get("academic_reputation")
+        result["qs_citations_per_faculty"] = qs_data.get("citations_per_faculty")
+        result["recognized"]               = True
+
+    _db_set(name, result)
+    _db_cache[name] = result
+    # Also cache under the cleaned name so other campus variants find it immediately
+    if cleaned != name:
+        _db_set(cleaned, result)
+        _db_cache[cleaned] = result
+    return result
+
+
 async def enrich_degrees(degrees: list[DegreeRecord]) -> list[DegreeRecord]:
-    """Enrich all degrees with QS/THE rankings in parallel."""
-    loop = asyncio.get_event_loop()
-    results = await asyncio.gather(*[
-        loop.run_in_executor(None, lookup_university, d.institution)
-        for d in degrees
-    ])
-    for degree, result in zip(degrees, results):
-        degree.qs_rank = result.get("qs_rank")
-        degree.the_rank = result.get("the_rank")
+    """
+    Enrich all degrees, with one API call per unique institution.
+
+    Why deduplicate?  asyncio.gather() runs all lookups concurrently.  When a
+    candidate has two degrees from different campuses of the same university
+    (e.g. Attock Campus and Abbottabad Campus), both calls would hit ROR at the
+    same time, causing rate-limit failures on both.  By looking up each unique
+    institution exactly once we avoid the race, and campus variants automatically
+    share the same result.
+    """
+    # ── 1. Collect unique institutions by cleaned name ────────────────────────
+    # Use the CLEANED name (campus suffix stripped) as both the dedup key AND
+    # the actual argument to lookup_university.
+    # Why? The original name "COMSATS University, Islamabad, Abbottabad Campus"
+    # causes ROR to fail silently, leaving canonical = original, and then
+    # _qs_lookup("...Abbottabad Campus") scores just under the 75 threshold
+    # against "COMSATS University Islamabad" in the QS cache.
+    # "COMSATS University, Islamabad" (cleaned) goes through ROR cleanly and
+    # _qs_lookup gets the correct canonical name to match against.
+    seen: dict[str, str] = {}        # cleaned_name → cleaned_name (key == value)
+    for d in degrees:
+        key = _clean_institution_name(d.institution)
+        if key not in seen:
+            seen[key] = key          # look up the CLEANED name, not the original
+
+    # ── 2. Look up each unique institution once ───────────────────────────────
+    keys    = list(seen.keys())
+    lookups = await asyncio.gather(*[lookup_university(k) for k in keys])
+    results_map: dict[str, dict] = {k: r for k, r in zip(keys, lookups)}
+
+    # ── 3. Apply result to every degree sharing that institution ──────────────
+    for degree in degrees:
+        key = _clean_institution_name(degree.institution)
+        res = results_map.get(key, {})
+        degree.qs_rank                   = res.get("qs_rank")
+        degree.the_rank                  = res.get("the_rank")
+        degree.hec_recognized            = res.get("recognized", False)
+        degree.quality_tier              = res.get("quality_tier")
+        degree.quality_band              = res.get("quality_band")
+        degree.institution_h_index       = res.get("h_index")
+        degree.qs_overall_score          = res.get("qs_overall_score")
+        degree.qs_academic_reputation    = res.get("qs_academic_reputation")
+        degree.qs_citations_per_faculty  = res.get("qs_citations_per_faculty")
     return degrees
 
 
+def clear_process_cache():
+    """Clear in-process dict cache — forces SQLite / API re-lookup next call."""
+    global _db_cache
+    _db_cache.clear()
+
+
 async def scrape_and_store_rankings():
-    """Seed university rankings into SQLite from curated dataset."""
-    global _rankings_cache
-    Path(_RANKINGS_DB).parent.mkdir(parents=True, exist_ok=True)
-
-    with sqlite3.connect(_RANKINGS_DB) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS university_rankings (
-                name TEXT PRIMARY KEY,
-                qs_rank INTEGER,
-                the_rank INTEGER
-            )
-        """)
-        conn.executemany(
-            "INSERT OR IGNORE INTO university_rankings VALUES (?, ?, ?)",
-            _QS_DATA
-        )
-        conn.commit()
-        count = conn.execute("SELECT COUNT(*) FROM university_rankings").fetchone()[0]
-
-    _rankings_cache = []  # force reload on next lookup
-    print(f"[university_verifier] Rankings ready: {count} universities in database.")
+    """Called at startup — initialize DB and preload QS data."""
+    _init_db()
+    _load_qs_data()
+    print(f"[university_verifier] Ready. QS data: {len(_qs_cache)} entries. "
+          "Institution metrics fetched on-demand via ROR + OpenAlex.")

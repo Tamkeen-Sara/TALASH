@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator
-from typing import Optional, Literal
+from typing import Optional
 
 
 def _null_str(v):
@@ -71,7 +71,9 @@ class HSERecord(BaseModel):
 
 class DegreeRecord(BaseModel):
     degree_title: str
-    level: Literal["BS", "BSc", "BE", "MS", "MPhil", "MBA", "PhD", "Other"]
+    # Free-form string — the LLM extracts whatever the CV says ("PhD", "Master of Engineering",
+    # "Laurea Magistrale", "Ingenieur Diplome", etc.).  No hardcoded Literal restriction.
+    level: str = "Other"
     specialization: Optional[str] = None
     institution: str
     cgpa: Optional[float] = None
@@ -84,7 +86,24 @@ class DegreeRecord(BaseModel):
     qs_rank: Optional[int] = None
     the_rank: Optional[int] = None
     qs_subject_rank: Optional[int] = None
+    hec_recognized: Optional[bool] = None
+    quality_tier: Optional[str] = None
+    quality_band: Optional[str] = None
+    institution_h_index: Optional[int] = None
+    qs_overall_score: Optional[float] = None
+    qs_academic_reputation: Optional[float] = None
+    qs_citations_per_faculty: Optional[float] = None
     raw_text: str = ""
+
+    @field_validator("level", mode="before")
+    @classmethod
+    def coerce_level(cls, v):
+        """Null/empty → 'Other' so missing level never crashes the pipeline."""
+        if v is None:
+            return "Other"
+        if isinstance(v, str) and v.strip().lower() in ("null", "none", ""):
+            return "Other"
+        return v if isinstance(v, str) else "Other"
 
     @field_validator("raw_text", mode="before")
     @classmethod

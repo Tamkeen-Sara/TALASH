@@ -1,5 +1,5 @@
-from pydantic import BaseModel, field_validator
-from typing import Optional
+from pydantic import BaseModel, field_validator, model_validator
+from typing import Optional, Any
 from .education import EducationProfile
 from .research import ResearchProfile
 
@@ -36,6 +36,16 @@ class EmploymentRecord(BaseModel):
     @field_validator("job_title", "organization", "raw_text", mode="before")
     @classmethod
     def coerce_strs(cls, v): return _null_str(v) if v is None or isinstance(v, str) else v
+
+    @field_validator("employment_type", mode="before")
+    @classmethod
+    def coerce_emp_type(cls, v):
+        """LLM returns 'null'/'none' string — map to None so the badge is hidden."""
+        if v is None:
+            return None
+        if isinstance(v, str) and v.strip().lower() in ("null", "none", ""):
+            return None
+        return v
 
     @field_validator("start_year", "start_month", "end_year", "end_month", "seniority_score", mode="before")
     @classmethod
@@ -83,10 +93,24 @@ class MissingInfo(BaseModel):
 class CandidateProfile(BaseModel):
     # Identity
     candidate_id: str
-    full_name: str
+    full_name: str = ""
     email: Optional[str] = None
     phone: Optional[str] = None
-    cv_filename: str
+    cv_filename: str = ""
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def coerce_full_name(cls, v):
+        """
+        LLM returns null when it can't find the candidate's name (short CV fragment,
+        scanned page with no header, etc.).  Accept whatever partial name is extracted;
+        only substitute a placeholder when the value is truly absent.
+        """
+        if v is None:
+            return "Unnamed Candidate"
+        if isinstance(v, str) and v.strip().lower() in ("null", "none"):
+            return "Unnamed Candidate"
+        return v if isinstance(v, str) else str(v)
 
     # Core profiles
     education: EducationProfile = EducationProfile()
