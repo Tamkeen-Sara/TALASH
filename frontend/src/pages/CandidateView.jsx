@@ -1,12 +1,16 @@
-import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, ArrowLeftRight, Download, CheckCircle, AlertTriangle, Info, Plus, Loader2 } from 'lucide-react'
-import { getCandidate, addSupervision, downloadReport } from '../api/talash'
+﻿import { useEffect, useState } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, ArrowLeftRight, Download, Trash2, Plus, Loader2, CheckCircle, AlertTriangle, Info } from 'lucide-react'
+import { getCandidate, addSupervision, downloadReport, deleteCandidate } from '../api/talash'
 import usePageTitle from '../hooks/usePageTitle'
 import ScoreRadar from '../components/ScoreRadar'
 import TimelineChart from '../components/TimelineChart'
 import JsonViewer from '../components/JsonViewer'
 import EducationTab from '../components/EducationTab'
+import ResearchTab from '../components/ResearchTab'
+import EmploymentTab from '../components/EmploymentTab'
+import SkillsTab from '../components/SkillsTab'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
@@ -14,7 +18,7 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-/* ─── Supervision add-record form ─── */
+/* â”€â”€â”€ Supervision add-record form â”€â”€â”€ */
 function SupervisionForm({ candidateId, onAdded }) {
   const [form, setForm] = useState({
     student_name: '', degree_level: 'PhD', thesis_title: '',
@@ -31,7 +35,10 @@ function SupervisionForm({ candidateId, onAdded }) {
       setMsg('Record added.')
       onAdded()
       setForm(p => ({ ...p, student_name: '', thesis_title: '' }))
-    } catch { setMsg('Failed to save.') }
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      setMsg(typeof detail === 'string' ? detail : 'Failed to save.')
+    }
     setSaving(false)
   }
 
@@ -51,7 +58,8 @@ function SupervisionForm({ candidateId, onAdded }) {
           onChange={e => set('thesis_title', e.target.value)}
           className="input-dark" style={{ gridColumn: '1 / -1' }} />
         <select value={form.degree_level} onChange={e => set('degree_level', e.target.value)} className="input-dark">
-          <option>PhD</option><option>MS</option><option>BSc</option>
+          <option value="PhD">PhD</option>
+          <option value="MS">MS</option>
         </select>
         <select value={form.role} onChange={e => set('role', e.target.value)} className="input-dark">
           <option value="main">Main Supervisor</option>
@@ -61,7 +69,7 @@ function SupervisionForm({ candidateId, onAdded }) {
           onChange={e => set('year_graduated', Number(e.target.value))} className="input-dark" />
         <button type="submit" disabled={saving} className="btn-primary"
           style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          {saving ? <><Loader2 size={14} className="animate-spin" />Saving…</> : 'Add Record'}
+          {saving ? <><Loader2 size={14} className="animate-spin" />Savingâ€¦</> : 'Add Record'}
         </button>
         {msg && <p style={{ gridColumn: '1 / -1', fontSize: 12, textAlign: 'center', color: 'var(--text-muted)' }}>{msg}</p>}
       </form>
@@ -69,7 +77,7 @@ function SupervisionForm({ candidateId, onAdded }) {
   )
 }
 
-const TABS = ['overview', 'education', 'research', 'employment', 'supervision', 'raw data']
+const TABS = ['overview', 'education', 'research', 'employment', 'skills', 'supervision', 'raw data']
 
 const REC = {
   Strong:      { bg: 'rgba(74,222,128,0.1)',   color: 'var(--success)', border: 'rgba(74,222,128,0.22)'   },
@@ -85,7 +93,7 @@ const SCORE_DIMS = [
   { label: 'Supervision', key: 'score_supervision' },
 ]
 
-/* ─── Reusable section divider row ─── */
+/* â”€â”€â”€ Reusable section divider row â”€â”€â”€ */
 function SectionHeader({ title }) {
   return (
     <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--border-subtle)' }}>
@@ -94,7 +102,7 @@ function SectionHeader({ title }) {
   )
 }
 
-/* ─── Publication row ─── */
+/* â”€â”€â”€ Publication row â”€â”€â”€ */
 function PaperRow({ p }) {
   const quartile = p.wos_quartile
   const badgeClass = p.is_predatory_flag ? 'badge-pred'
@@ -129,11 +137,18 @@ function PaperRow({ p }) {
 
 export default function CandidateView() {
   const { id } = useParams()
-  const [candidate, setCandidate] = useState(null)
-  const [loading, setLoading]     = useState(true)
-  const [tab, setTab]             = useState('overview')
-  const [error, setError]         = useState(null)
+  const navigate = useNavigate()
+  const [candidate, setCandidate]     = useState(null)
+  const [loading, setLoading]         = useState(true)
+  const [tab, setTab]                 = useState('overview')
+  const [error, setError]             = useState(null)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   usePageTitle(candidate?.full_name || 'Candidate')
+
+  const handleDelete = async () => {
+    await deleteCandidate(id)
+    navigate('/dashboard')
+  }
 
   const fetchCandidate = () => {
     setLoading(true)
@@ -153,7 +168,7 @@ export default function CandidateView() {
         borderColor: 'var(--border-strong)', borderTopColor: 'var(--accent)',
         animation: 'spin 0.75s linear infinite',
       }} />
-      <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading candidate…</p>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading candidateâ€¦</p>
     </div>
   )
 
@@ -161,7 +176,7 @@ export default function CandidateView() {
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '80px 40px', textAlign: 'center' }}>
       <p style={{ color: 'var(--error)', marginBottom: 16 }}>{error || 'Not found'}</p>
       <Link to="/dashboard" style={{ fontSize: 13, color: 'var(--accent)', textDecoration: 'none' }}>
-        ← Dashboard
+        â† Dashboard
       </Link>
     </div>
   )
@@ -171,80 +186,122 @@ export default function CandidateView() {
   return (
     <div style={{ padding: '36px 40px', maxWidth: 1100 }}>
 
-      {/* ── Hero header ── */}
-      <div className="hero-gradient" style={{ borderRadius: 18, padding: '28px 32px', marginBottom: 24, border: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          {/* Top row */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
+      {/* â”€â”€ Hero â”€â”€ editorial, calm, human â”€â”€ */}
+      <div style={{
+        marginBottom: 24, paddingBottom: 24,
+        borderBottom: '1px solid var(--border-subtle)',
+      }}>
+        {/* Breadcrumb */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <Link to="/dashboard" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            fontSize: 11, color: 'var(--text-muted)', textDecoration: 'none', transition: 'color 0.14s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--text-secondary)'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>
+            <ArrowLeft size={11} /> Dashboard
+          </Link>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link to={`/compare?ids=${id}`} className="btn-ghost" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '7px 12px', fontSize: 12, textDecoration: 'none',
+              border: '1px solid var(--border-default)', borderRadius: 8,
+              color: 'var(--text-secondary)',
+            }}>
+              <ArrowLeftRight size={12} /> Compare
+            </Link>
+            <button onClick={() => downloadReport(id).then(r => downloadBlob(r.data, `${candidate.full_name}_report.pdf`))}
+              className="btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', fontSize: 12 }}>
+              <Download size={12} /> PDF
+            </button>
+            <button onClick={() => setShowDeleteDialog(true)} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+              color: 'var(--error)', border: '1px solid rgba(238,116,128,0.22)',
+              cursor: 'pointer', background: 'rgba(238,116,128,0.06)', transition: 'all 0.14s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(238,116,128,0.14)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(238,116,128,0.06)'}>
+              <Trash2 size={12} /> Delete
+            </button>
+          </div>
+        </div>
+
+        {/* Candidate identity */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24 }}>
+          <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flex: 1 }}>
+            {/* Avatar */}
+            <div style={{
+              width: 68, height: 68, borderRadius: 14, flexShrink: 0,
+              background: 'linear-gradient(135deg, var(--accent), var(--accent-light))',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 500, color: '#1d1408',
+            }}>
+              {candidate.full_name?.split(' ').map(n => n[0]).slice(0, 2).join('')}
+            </div>
             <div>
-              <Link to="/dashboard" style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                fontSize: 12, color: 'rgba(240,236,224,0.4)', textDecoration: 'none', marginBottom: 10,
-                transition: 'color 0.14s',
-              }}
-              onMouseEnter={e => e.currentTarget.style.color = 'rgba(240,236,224,0.7)'}
-              onMouseLeave={e => e.currentTarget.style.color = 'rgba(240,236,224,0.4)'}>
-                <ArrowLeft size={12} /> Dashboard
-              </Link>
-              <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.025em', color: '#f0ece0' }}>
-                {candidate.full_name}
-              </h1>
-              <p style={{ fontSize: 13, color: 'rgba(240,236,224,0.5)', marginTop: 4 }}>{candidate.email}</p>
               {rec && (
-                <span style={{
-                  display: 'inline-block', marginTop: 10,
-                  padding: '4px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 600,
-                  background: rec.bg, color: rec.color, border: `1px solid ${rec.border}`,
-                }}>
-                  {candidate.recommendation} Candidate
-                </span>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <Link to={`/compare?ids=${id}`} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 7,
-                padding: '9px 16px', borderRadius: 10, fontSize: 13, fontWeight: 500,
-                color: 'rgba(240,236,224,0.85)', textDecoration: 'none',
-                background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-                transition: 'background 0.14s',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.13)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}>
-                <ArrowLeftRight size={13} /> Compare
-              </Link>
-              <button onClick={() => downloadReport(id).then(r => downloadBlob(r.data, `${candidate.full_name}_report.pdf`))}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 7,
-                  padding: '9px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-                  color: '#1a1508', border: 'none', cursor: 'pointer',
-                  background: 'rgba(240,236,224,0.92)', transition: 'background 0.14s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = '#f0ece0'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(240,236,224,0.92)'}>
-                <Download size={13} /> Download PDF
-              </button>
-            </div>
-          </div>
-
-          {/* Score chips row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
-            {SCORE_DIMS.map(({ label, key }) => (
-              <div key={key} style={{
-                padding: '12px 14px', borderRadius: 12, textAlign: 'center',
-                background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)',
-              }}>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#f0ece0', letterSpacing: '-0.02em' }}>
-                  {candidate[key] ?? 'N/A'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 9999,
+                    background: rec.bg, color: rec.color, border: `1px solid ${rec.border}`,
+                  }}>â˜… {candidate.recommendation} candidate</span>
                 </div>
-                <div style={{ fontSize: 11, color: 'rgba(240,236,224,0.45)', marginTop: 3 }}>{label}</div>
-              </div>
-            ))}
+              )}
+              <h1 style={{
+                fontFamily: 'var(--font-display)', fontWeight: 400, fontSize: 34,
+                color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em', lineHeight: 1,
+              }}>{candidate.full_name}</h1>
+              <p style={{
+                fontSize: 13, color: 'var(--text-secondary)', marginTop: 8,
+                fontFamily: 'var(--font-display)', fontStyle: 'italic',
+              }}>
+                {candidate.email || 'No email on file'}
+                {candidate.cv_filename && (
+                  <span style={{ marginLeft: 12, fontFamily: 'var(--font-mono, monospace)', fontSize: 11,
+                    color: 'var(--text-muted)', fontStyle: 'normal' }}>{candidate.cv_filename}</span>
+                )}
+              </p>
+            </div>
           </div>
+          {/* Composite score donut-style display */}
+          {(candidate.score_total || candidate.computed_score) && (
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div style={{
+                fontFamily: 'var(--font-display)', fontSize: 48, fontWeight: 400,
+                color: 'var(--accent)', lineHeight: 1, letterSpacing: '-0.03em',
+              }}>{candidate.score_total ?? candidate.computed_score}</div>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase',
+                color: 'var(--text-muted)', marginTop: 4 }}>composite</div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── Tab bar ── */}
+      {/* Score chips row */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)',
+        gap: 1, background: 'var(--border-subtle)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 12, overflow: 'hidden', marginBottom: 24,
+      }}>
+        {SCORE_DIMS.map(({ label, key }) => (
+          <div key={key} style={{ padding: '14px 12px', textAlign: 'center', background: 'var(--bg-card)' }}>
+            <div style={{
+              fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 400,
+              color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1,
+            }}>
+              {candidate[key] ?? 'N/A'}
+            </div>
+            <div style={{
+              fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em',
+              color: 'var(--text-muted)', marginTop: 5,
+            }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* â”€â”€ Tab bar â”€â”€ */}
       <div style={{
         display: 'flex', gap: 4, padding: 4, borderRadius: 14, marginBottom: 24, overflowX: 'auto',
         background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
@@ -264,7 +321,7 @@ export default function CandidateView() {
         ))}
       </div>
 
-      {/* ════ OVERVIEW ════ */}
+      {/* â•â•â•â• OVERVIEW â•â•â•â• */}
       {tab === 'overview' && (
         <div className="fade-up" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
           <div className="card" style={{ padding: '22px 24px' }}>
@@ -325,123 +382,44 @@ export default function CandidateView() {
                 </ul>
               </div>
             )}
+            {candidate.score_justification && (
+              <div className="card" style={{ padding: '18px 22px' }}>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>
+                  Overall Assessment
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.65 }}>
+                  {candidate.score_justification}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* ════ EDUCATION ════ */}
+      {/* â•â•â•â• EDUCATION â•â•â•â• */}
       {tab === 'education' && <EducationTab candidate={candidate} />}
 
-      {/* ════ RESEARCH ════ */}
+      {/* â•â•â•â• RESEARCH â•â•â•â• */}
       {tab === 'research' && (
-        <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
-            {[
-              { label: 'H-Index',         value: candidate.research?.h_index,        color: 'var(--violet)' },
-              { label: 'Q1 Papers',        value: candidate.research?.q1_count,        color: 'var(--success)' },
-              { label: 'Total Citations',  value: candidate.research?.total_citations, color: 'var(--accent)' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="card" style={{ padding: '20px 22px', textAlign: 'center' }}>
-                <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.03em', color, marginBottom: 6 }}>
-                  {value ?? 'N/A'}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Journal papers */}
-          {candidate.research?.journal_papers?.length > 0 && (
-            <div className="card" style={{ overflow: 'hidden' }}>
-              <SectionHeader title={`Journal Papers (${candidate.research.journal_papers.length})`} />
-              {candidate.research.journal_papers.map((p, i) => <PaperRow key={i} p={p} />)}
-            </div>
-          )}
-
-          {/* Conference papers */}
-          {candidate.research?.conference_papers?.length > 0 && (
-            <div className="card" style={{ overflow: 'hidden' }}>
-              <SectionHeader title={`Conference Papers (${candidate.research.conference_papers.length})`} />
-              {candidate.research.conference_papers.map((p, i) => (
-                <div key={i} style={{ padding: '14px 22px', borderBottom: '1px solid var(--border-subtle)' }}>
-                  <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 4 }}>{p.title}</p>
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    {p.conference_name} · {p.year}
-                    {p.conference_number && <span style={{ marginLeft: 8 }}>({p.conference_number}th edition)</span>}
-                  </p>
-                  {p.core_rank && (
-                    <span style={{
-                      display: 'inline-block', marginTop: 6,
-                      padding: '2px 9px', borderRadius: 9999, fontSize: 11, fontWeight: 600,
-                      background: 'rgba(56,189,248,0.1)', color: 'var(--sky)', border: '1px solid rgba(56,189,248,0.2)',
-                    }}>
-                      CORE {p.core_rank}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="fade-up">
+          <ResearchTab candidate={candidate} />
         </div>
       )}
 
-      {/* ════ EMPLOYMENT ════ */}
+      {/* â•â•â•â• EMPLOYMENT â•â•â•â• */}
       {tab === 'employment' && (
-        <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <div className="card" style={{ padding: '22px 24px' }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 18 }}>
-              Employment Timeline
-            </h3>
-            <TimelineChart candidate={candidate} />
-          </div>
-
-          {candidate.employment?.records?.length > 0 && (
-            <div className="card" style={{ overflow: 'hidden' }}>
-              <SectionHeader title="Employment Records" />
-              {candidate.employment.records.map((r, i) => (
-                <div key={i}
-                  style={{ padding: '14px 22px', borderBottom: '1px solid var(--border-subtle)', transition: 'background 0.12s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{r.job_title}</p>
-                      <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{r.organization}</p>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                        {r.start_year ?? '?'} to {r.is_current ? 'Present' : (r.end_year ?? '?')}
-                      </p>
-                      {r.employment_type && (
-                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, textTransform: 'capitalize' }}>
-                          {r.employment_type}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  {r.responsibilities?.slice(0, 3).map((res, j) => (
-                    <p key={j} style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5, display: 'flex', gap: 6 }}>
-                      <span style={{ flexShrink: 0 }}>·</span>{res}
-                    </p>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {candidate.employment?.overlaps?.length > 0 && (
-            <div className="card" style={{ padding: '16px 22px', border: '1px solid rgba(251,191,36,0.2)' }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--warning)', marginBottom: 8 }}>Overlap Flags</p>
-              {candidate.employment.overlaps.map((f, i) => (
-                <p key={i} style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{JSON.stringify(f)}</p>
-              ))}
-            </div>
-          )}
+        <div className="fade-up">
+          <EmploymentTab candidate={candidate} />
         </div>
       )}
 
-      {/* ════ SUPERVISION ════ */}
+      {/* â•â•â•â• SUPERVISION â•â•â•â• */}
+      {tab === 'skills' && (
+        <div className="fade-up">
+          <SkillsTab candidate={candidate} />
+        </div>
+      )}
+
       {tab === 'supervision' && (
         <div className="fade-up">
           <div className="card" style={{ overflow: 'hidden' }}>
@@ -483,12 +461,24 @@ export default function CandidateView() {
         </div>
       )}
 
-      {/* ════ RAW DATA ════ */}
+      {/* â•â•â•â• RAW DATA â•â•â•â• */}
       {tab === 'raw data' && (
         <div className="fade-up">
           <JsonViewer data={candidate} title={`Extracted JSON: ${candidate.full_name}`} />
         </div>
       )}
+
+      <ConfirmDialog
+        open={showDeleteDialog}
+        title="Delete candidate?"
+        message={`This will permanently remove ${candidate?.full_name} and all their data. This action cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteDialog(false)}
+      />
     </div>
   )
 }
+
+
+

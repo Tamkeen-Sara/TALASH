@@ -1,18 +1,53 @@
-function QsRankBadge({ rank }) {
-  if (!rank) return <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>Unranked</span>
-  const [bg, color, border] =
-    rank <= 100  ? ['rgba(74,222,128,0.1)',  'var(--success)', 'rgba(74,222,128,0.25)'] :
-    rank <= 500  ? ['rgba(56,189,248,0.1)',  'var(--sky)',     'rgba(56,189,248,0.25)'] :
-    rank <= 1000 ? ['var(--accent-dim)',      'var(--accent)',  'var(--accent-ring)']    :
-                   ['var(--bg-elevated)',     'var(--text-muted)', 'var(--border-subtle)']
-  return (
-    <span style={{
-      display: 'inline-block', padding: '2px 8px', borderRadius: 9999,
-      fontSize: 11, fontWeight: 600, background: bg, color, border: `1px solid ${border}`,
-    }}>
-      QS #{rank}
-    </span>
-  )
+﻿function QsRankBadge({ rank, recognized, qualityTier, qualityBand }) {
+  // QS rank takes priority if available
+  if (rank) {
+    const [bg, color, border] =
+      rank <= 100  ? ['rgba(74,222,128,0.1)',  'var(--success)', 'rgba(74,222,128,0.25)'] :
+      rank <= 500  ? ['rgba(56,189,248,0.1)',  'var(--sky)',     'rgba(56,189,248,0.25)'] :
+      rank <= 1000 ? ['var(--accent-dim)',      'var(--accent)',  'var(--accent-ring)']    :
+                     ['var(--bg-elevated)',     'var(--text-muted)', 'var(--border-subtle)']
+    return (
+      <span style={{
+        display: 'inline-block', padding: '2px 8px', borderRadius: 9999,
+        fontSize: 11, fontWeight: 600, background: bg, color, border: `1px solid ${border}`,
+      }} title={qualityBand || ''}>
+        QS #{rank}
+      </span>
+    )
+  }
+  // OpenAlex quality tier (no QS rank but have research metrics)
+  if (qualityTier) {
+    const map = {
+      Elite:      ['rgba(74,222,128,0.12)',  'var(--success)', 'rgba(74,222,128,0.28)'],
+      Excellent:  ['rgba(56,189,248,0.12)',  'var(--sky)',     'rgba(56,189,248,0.28)'],
+      Strong:     ['var(--accent-dim)',       'var(--accent)',  'var(--accent-ring)'   ],
+      Good:       ['rgba(232,160,74,0.10)',   'var(--accent)',  'var(--accent-ring)'   ],
+      Recognized: ['rgba(232,160,74,0.08)',   'var(--accent)',  'rgba(232,160,74,0.20)'],
+      Known:      ['var(--bg-elevated)',      'var(--text-muted)', 'var(--border-subtle)'],
+    }
+    const [bg, color, border] = map[qualityTier] || map.Known
+    return (
+      <span style={{
+        display: 'inline-block', padding: '2px 8px', borderRadius: 9999,
+        fontSize: 11, fontWeight: 600, background: bg, color, border: `1px solid ${border}`,
+      }} title={qualityBand || qualityTier}>
+        {qualityBand || qualityTier}
+      </span>
+    )
+  }
+  if (recognized) {
+    return (
+      <span style={{
+        display: 'inline-block', padding: '2px 8px', borderRadius: 9999,
+        fontSize: 11, fontWeight: 600,
+        background: 'rgba(232,160,74,0.1)', color: 'var(--accent)',
+        border: '1px solid var(--accent-ring)',
+      }}>
+        Recognized
+      </span>
+    )
+  }
+  return <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>Unverified</span>
 }
 
 function CgpaBar({ cgpa, scale = 4 }) {
@@ -133,7 +168,7 @@ export default function EducationTab({ candidate }) {
             <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-elevated)' }}>
-                  {['DEGREE', 'INSTITUTION', 'PERIOD', 'CGPA', 'QS RANK'].map(h => (
+                  {['DEGREE', 'INSTITUTION', 'PERIOD', 'CGPA', 'QS RANK', 'ACAD. REP', 'CITATIONS/FAC'].map(h => (
                     <th key={h} style={{
                       padding: '10px 20px', textAlign: 'left', fontSize: 10,
                       fontWeight: 600, letterSpacing: '0.08em', color: 'var(--text-muted)',
@@ -148,10 +183,10 @@ export default function EducationTab({ candidate }) {
                       <span style={{
                         display: 'inline-block', padding: '2px 7px', borderRadius: 9999,
                         fontSize: 11, fontWeight: 700, marginRight: 8,
-                        background: d.level === 'PhD' ? 'rgba(168,85,247,0.12)' :
-                          d.level?.startsWith('M') ? 'rgba(56,189,248,0.12)' : 'var(--bg-elevated)',
-                        color: d.level === 'PhD' ? '#a855f7' :
-                          d.level?.startsWith('M') ? 'var(--sky)' : 'var(--text-muted)',
+                        background: /phd|doctor/i.test(d.level) ? 'rgba(168,85,247,0.12)' :
+                          /master|m\.sc|msc|mphil|mba|ms\b/i.test(d.level) ? 'rgba(56,189,248,0.12)' : 'var(--bg-elevated)',
+                        color: /phd|doctor/i.test(d.level) ? '#a855f7' :
+                          /master|m\.sc|msc|mphil|mba|ms\b/i.test(d.level) ? 'var(--sky)' : 'var(--text-muted)',
                       }}>{d.level}</span>
                       <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
                         {d.specialization || d.degree_title}
@@ -168,7 +203,18 @@ export default function EducationTab({ candidate }) {
                       />
                     </td>
                     <td style={{ padding: '14px 20px' }}>
-                      <QsRankBadge rank={d.qs_rank || d.the_rank} />
+                      <QsRankBadge
+                        rank={d.qs_rank || d.the_rank}
+                        recognized={d.hec_recognized}
+                        qualityTier={d.quality_tier}
+                        qualityBand={d.quality_band}
+                      />
+                    </td>
+                    <td style={{ padding: '14px 20px', color: 'var(--text-secondary)', fontSize: 12 }}>
+                      {d.qs_academic_reputation != null ? d.qs_academic_reputation : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>N/A</span>}
+                    </td>
+                    <td style={{ padding: '14px 20px', color: 'var(--text-secondary)', fontSize: 12 }}>
+                      {d.qs_citations_per_faculty != null ? d.qs_citations_per_faculty : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>N/A</span>}
                     </td>
                   </tr>
                 ))}
@@ -193,7 +239,7 @@ export default function EducationTab({ candidate }) {
                 {label}
               </p>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                <span style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-primary)' }}>
+                <span style={{ fontSize: 26, fontWeight: 400, fontFamily: 'var(--font-display)', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
                   {rec.percentage ?? '--'}%
                 </span>
                 {rec.grade && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Grade {rec.grade}</span>}
@@ -219,9 +265,9 @@ export default function EducationTab({ candidate }) {
             <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
               Education Score Breakdown
             </h3>
-            <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent)', letterSpacing: '-0.03em' }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 400, color: 'var(--accent)', letterSpacing: '-0.03em' }}>
               {edu.education_score ?? 0}
-              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>/100</span>
+              <span style={{ fontFamily: 'var(--font-ui)', fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>/100</span>
             </span>
           </div>
           <ScoreBreakdown breakdown={edu.score_breakdown} />

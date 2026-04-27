@@ -9,11 +9,11 @@ import {
 } from 'recharts'
 
 const DIMENSIONS = [
-  { key: 'score_research',    label: 'Research'    },
-  { key: 'score_education',   label: 'Education'   },
-  { key: 'score_employment',  label: 'Employment'  },
-  { key: 'score_skills',      label: 'Skills'      },
-  { key: 'score_supervision', label: 'Supervision' },
+  { key: 'score_research',    label: 'Research',    fallback: c => c.research?.research_score       },
+  { key: 'score_education',   label: 'Education',   fallback: c => c.education?.education_score     },
+  { key: 'score_employment',  label: 'Employment',  fallback: c => c.employment?.employment_score   },
+  { key: 'score_skills',      label: 'Skills',      fallback: null                                  },
+  { key: 'score_supervision', label: 'Supervision', fallback: null                                  },
 ]
 
 // Default amber accent — matches the Scholar's Warmth theme.
@@ -23,9 +23,9 @@ const DEFAULT_COLOR = '#f0a030'
 export default function ScoreRadar({ candidate, color = DEFAULT_COLOR }) {
   if (!candidate) return null
 
-  const data = DIMENSIONS.map(({ key, label }) => ({
+  const data = DIMENSIONS.map(({ key, label, fallback }) => ({
     dimension: label,
-    score: candidate[key] ?? 0,
+    score: candidate[key] ?? (fallback ? (fallback(candidate) ?? 0) : 0),
   }))
 
   return (

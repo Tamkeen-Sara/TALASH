@@ -23,7 +23,7 @@ export default function WeightSliders() {
           Weights
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: valid ? 'var(--success)' : 'var(--error)' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 400, color: valid ? 'var(--success)' : 'var(--error)', letterSpacing: '-0.02em' }}>
             {total}%
           </span>
           <button onClick={resetWeights} style={{
@@ -43,7 +43,7 @@ export default function WeightSliders() {
           <div key={key}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{label}</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color }}>{weights[key]}%</span>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 400, color, letterSpacing: '-0.01em' }}>{weights[key]}%</span>
             </div>
             <div style={{ position: 'relative' }}>
               {/* Visual track */}

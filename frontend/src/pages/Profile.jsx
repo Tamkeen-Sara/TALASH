@@ -4,14 +4,13 @@ import useCandidateStore from '../store/candidateStore'
 import WeightSliders from '../components/WeightSliders'
 import usePageTitle from '../hooks/usePageTitle'
 import { getCandidates } from '../api/talash'
-import { Users, TrendingUp, FileText, GraduationCap, Cpu, Layers, Database, Server, Globe } from 'lucide-react'
 
 const SYS_INFO = [
-  { label: 'LLM Provider',    value: 'Groq / Llama 3.3 70B',       Icon: Cpu,      color: 'var(--success)' },
-  { label: 'Extraction',      value: 'llama-3.3-70b-versatile',     Icon: Layers,   color: 'var(--violet)' },
-  { label: 'University DB',   value: '170+ ranked institutions',    Icon: Database, color: 'var(--sky)' },
-  { label: 'Backend',         value: 'FastAPI + Python',            Icon: Server,   color: 'var(--rose)' },
-  { label: 'Frontend',        value: 'React 18 + Vite',             Icon: Globe,    color: 'var(--teal)' },
+  { label: 'LLM provider',    value: 'Groq · Llama 3.3 70B'         },
+  { label: 'University DB',   value: '170+ ranked institutions'       },
+  { label: 'Backend',         value: 'FastAPI · Python 3.12'          },
+  { label: 'Frontend',        value: 'React 18 · Vite'               },
+  { label: 'Build',           value: 'v1.0.0'                        },
 ]
 
 export default function Profile() {
@@ -32,164 +31,120 @@ export default function Profile() {
   const totalPhD = candidates.filter(c => c.education?.degrees?.some(d => d.level === 'PhD')).length
 
   const stats = [
-    { label: 'Candidates Processed', value: candidates.length, Icon: Users,          color: 'var(--violet)',  bg: 'rgba(149,128,255,0.1)', border: 'rgba(149,128,255,0.2)' },
-    { label: 'Average Score',         value: avgScore,           Icon: TrendingUp,    color: 'var(--success)', bg: 'rgba(74,222,128,0.1)',  border: 'rgba(74,222,128,0.2)'  },
-    { label: 'Q1 Papers Total',       value: totalQ1,            Icon: FileText,      color: 'var(--accent)',  bg: 'var(--accent-dim)',      border: 'var(--accent-ring)'    },
-    { label: 'PhD Holders',           value: totalPhD,           Icon: GraduationCap, color: 'var(--rose)',    bg: 'rgba(232,122,140,0.1)', border: 'rgba(232,122,140,0.2)' },
+    { label: 'Candidates processed', value: candidates.length,  color: 'var(--text-primary)' },
+    { label: 'Average score',        value: avgScore,            color: 'var(--accent)'       },
+    { label: 'Q1 papers total',      value: totalQ1,             color: 'var(--text-primary)' },
+    { label: 'PhD holders',          value: totalPhD,            color: 'var(--text-primary)' },
   ]
 
+  const initials = user?.initials || user?.name?.[0] || '?'
+
   return (
-    <div style={{ maxWidth: 820, padding: '40px 40px', margin: '0 auto' }}>
+    <div style={{ maxWidth: 820, padding: '36px 40px', margin: '0 auto' }}>
 
-      {/* ── Profile hero ──
-           Two separate elements so no shared overflow/clip context.
-           Banner is standalone. Body card sits below with its own border-radius.
-           Avatar uses position:absolute relative to the wrapper. ── */}
-      <div style={{ position: 'relative', marginBottom: 24 }}>
-
-        {/* Banner is self-contained and clips its own orbs */}
+      {/* ── Profile banner ── flat, dignified, single warm glow ── */}
+      <div style={{ position: 'relative', marginBottom: 60 }}>
         <div style={{
-          height: 108,
-          borderRadius: 16,
-          overflow: 'hidden',
-          position: 'relative',
-          background: 'linear-gradient(135deg, #100c20 0%, #1e1040 55%, #0d1a2e 100%)',
+          height: 110, borderRadius: 14, position: 'relative', overflow: 'hidden',
+          background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
         }}>
+          {/* Single warm radial glow */}
           <div style={{
-            position: 'absolute', top: '-50%', left: '-8%',
-            width: 260, height: 260, borderRadius: '50%', pointerEvents: 'none',
-            background: 'radial-gradient(circle, rgba(240,160,48,0.16), transparent 65%)',
+            position: 'absolute', inset: 0,
+            background: 'radial-gradient(ellipse at 80% 20%, var(--accent-glow), transparent 60%)',
           }} />
+          {/* Company tag */}
           <div style={{
-            position: 'absolute', bottom: '-60%', right: '8%',
-            width: 220, height: 220, borderRadius: '50%', pointerEvents: 'none',
-            background: 'radial-gradient(circle, rgba(149,128,255,0.14), transparent 65%)',
-          }} />
+            position: 'absolute', top: 16, right: 20,
+            fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase',
+            color: 'var(--text-muted)',
+          }}>TALASH · Talent Team</div>
         </div>
 
-        {/* Avatar is absolute and bridges the banner and body */}
-        <div style={{
-          position: 'absolute',
-          top: 108 - 36,   /* banner height minus half avatar height */
-          left: 28,
-          zIndex: 2,
-        }}>
+        {/* Avatar bridging banner and body */}
+        <div style={{ position: 'absolute', top: 70, left: 28, zIndex: 2 }}>
           {user?.picture
             ? <img src={user.picture} alt={user.name} style={{
-                width: 72, height: 72, borderRadius: 16, objectFit: 'cover', display: 'block',
-                border: '3px solid var(--bg-card)',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                width: 76, height: 76, borderRadius: 14, objectFit: 'cover', display: 'block',
+                border: '4px solid var(--bg-base)',
               }} />
             : <div style={{
-                width: 72, height: 72, borderRadius: 16,
-                background: 'linear-gradient(135deg, #e8930a, #f5b030)',
+                width: 76, height: 76, borderRadius: 14,
+                background: 'linear-gradient(135deg, var(--accent), var(--accent-light))',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#fff', fontSize: 24, fontWeight: 700,
-                border: '3px solid var(--bg-card)',
-                boxShadow: '0 4px 16px rgba(232,147,10,0.3)',
-              }}>
-                {user?.initials || user?.name?.[0] || '?'}
-              </div>
+                fontFamily: 'var(--font-display)', color: '#1d1408', fontSize: 28, fontWeight: 500,
+                border: '4px solid var(--bg-base)',
+              }}>{initials}</div>
           }
         </div>
 
-        {/* Body card sits below banner without overflow hidden */}
-        <div style={{
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: '0 0 16px 16px',
-          padding: '44px 28px 24px',   /* top padding = 36 overlap + 8 breathing room */
-          marginTop: -2,               /* tiny overlap to merge border visually with banner */
-        }}>
-          {/* Name / role */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
-            {/* Spacer so text clears the avatar */}
-            <div style={{ width: 72 + 16, flexShrink: 0 }} />
-            <div>
-              <h1 style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--text-primary)', marginTop: 6 }}>
-                {user?.name}
-              </h1>
-              <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>
-                {user?.role} · TALASH System
-              </p>
-            </div>
-          </div>
-
-          {/* Badges */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{
-              padding: '4px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 500,
-              background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent-ring)',
-            }}>
-              {user?.email}
-            </span>
-            <span style={{
-              padding: '4px 12px', borderRadius: 9999, fontSize: 12, fontWeight: 500,
-              background: 'rgba(74,222,128,0.1)', color: 'var(--success)', border: '1px solid rgba(74,222,128,0.2)',
-            }}>
-              Active Session
-            </span>
-          </div>
+        {/* Name + role */}
+        <div style={{ position: 'absolute', top: 124, left: 120 }}>
+          <h1 style={{
+            fontFamily: 'var(--font-display)', fontWeight: 400, fontSize: 22,
+            color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em',
+          }}>{user?.name}</h1>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>
+            {user?.role} · {user?.email}
+          </p>
         </div>
       </div>
 
-      {/* ── Stats row ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
-        {stats.map(({ label, value, Icon, color, bg, border }) => (
-          <div key={label} className="card" style={{ padding: '18px 20px' }}>
+      {/* ── Stat strip — hairline-divided, number-led ── */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+        border: '1px solid var(--border-subtle)', borderRadius: 14,
+        background: 'var(--bg-card)', marginBottom: 22, overflow: 'hidden',
+      }}>
+        {stats.map(({ label, value, color }, i, a) => (
+          <div key={label} style={{
+            padding: '20px 22px',
+            borderRight: i < a.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+          }}>
             <div style={{
-              width: 34, height: 34, borderRadius: 10, marginBottom: 14,
-              background: bg, border: `1px solid ${border}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Icon size={15} style={{ color }} />
-            </div>
-            <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.03em', color, marginBottom: 4 }}>
-              {value}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{label}</div>
+              fontFamily: 'var(--font-display)', fontSize: 34, fontWeight: 400,
+              color, letterSpacing: '-0.02em', lineHeight: 1,
+            }}>{value}</div>
+            <div style={{
+              fontSize: 11, color: 'var(--text-muted)', marginTop: 8,
+              fontStyle: 'italic', fontFamily: 'var(--font-display)',
+            }}>{label}</div>
           </div>
         ))}
       </div>
 
-      {/* ── Settings grid ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      {/* ── Two-column: weights + system ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
 
         {/* Scoring weights */}
-        <div className="card" style={{ padding: '24px 26px' }}>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 22 }}>
-            Scoring Weights
-          </h3>
+        <div className="card" style={{ padding: '22px 24px' }}>
+          <p style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase',
+            color: 'var(--text-muted)', marginBottom: 18,
+          }}>Scoring weights</p>
           <WeightSliders />
         </div>
 
         {/* System info */}
-        <div className="card" style={{ padding: '24px 26px' }}>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 22 }}>
-            System Info
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {SYS_INFO.map(({ label, value, Icon, color }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Icon size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
-                </div>
-                <span style={{ fontSize: 12, fontWeight: 500, color }}>{value}</span>
+        <div className="card" style={{ padding: '22px 24px' }}>
+          <p style={{
+            fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase',
+            color: 'var(--text-muted)', marginBottom: 18,
+          }}>System</p>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {SYS_INFO.map(({ label, value }, i, a) => (
+              <div key={label} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                padding: '11px 0',
+                borderBottom: i < a.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+              }}>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{label}</span>
+                <span style={{
+                  fontFamily: 'var(--font-mono, monospace)', fontSize: 11,
+                  color: 'var(--text-primary)',
+                }}>{value}</span>
               </div>
             ))}
-            <div style={{
-              paddingTop: 16, marginTop: 4,
-              borderTop: '1px solid var(--border-subtle)',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            }}>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Build</span>
-              <span style={{
-                fontSize: 11, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 6,
-                background: 'var(--bg-elevated)', color: 'var(--text-secondary)',
-                border: '1px solid var(--border-subtle)',
-              }}>v1.0.0</span>
-            </div>
           </div>
         </div>
       </div>

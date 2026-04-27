@@ -6,13 +6,15 @@ import useCandidateStore from '../store/candidateStore'
 import usePageTitle from '../hooks/usePageTitle'
 
 const STATUS_META = {
-  parsing:         { color: 'var(--warning)',  label: 'Parsing' },
-  splitting:       { color: 'var(--violet)',   label: 'Splitting' },
-  split_complete:  { color: 'var(--violet)',   label: 'Split complete' },
-  extracted:       { color: 'var(--sky)',      label: 'Extracted' },
-  education_scored:{ color: 'var(--success)',  label: 'Education scored' },
-  complete:        { color: 'var(--success)',  label: 'Complete' },
-  error:           { color: 'var(--error)',    label: 'Error' },
+  parsing:          { color: 'var(--warning)',  label: 'Parsing'           },
+  splitting:        { color: 'var(--violet)',   label: 'Splitting'         },
+  split_complete:   { color: 'var(--violet)',   label: 'Split complete'    },
+  extracted:        { color: 'var(--sky)',      label: 'Extracted'         },
+  education_scored: { color: 'var(--success)',  label: 'Education scored'  },
+  research_scored:  { color: 'var(--success)',  label: 'Research scored'   },
+  employment_scored:{ color: 'var(--success)',  label: 'Employment scored' },
+  complete:         { color: 'var(--success)',  label: 'Complete'          },
+  error:            { color: 'var(--error)',    label: 'Error'             },
 }
 
 export default function Upload() {
@@ -84,18 +86,23 @@ export default function Upload() {
     <div style={{ maxWidth: 640, padding: '40px 40px', margin: '0 auto' }}>
 
       {/* Header */}
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.025em', color: 'var(--text-primary)' }}>
-          Upload CVs
-        </h1>
-        <p style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 6 }}>
-          AI-powered extraction and scoring in seconds.
+      <div style={{ marginBottom: 28 }}>
+        <p style={{
+          fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase',
+          color: 'var(--text-muted)', marginBottom: 8,
+        }}>Step 1 · Intake</p>
+        <h1 style={{
+          fontFamily: 'var(--font-display)', fontWeight: 400, fontSize: 34,
+          letterSpacing: '-0.02em', color: 'var(--text-primary)', margin: 0, lineHeight: 1.1,
+        }}>Add candidates</h1>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8 }}>
+          Drop CVs in PDF. We'll parse, verify, and score them in seconds.
         </p>
       </div>
 
       {/* Mode toggle */}
       <div style={{
-        display: 'flex', gap: 6, padding: 6, borderRadius: 14, marginBottom: 24,
+        display: 'flex', gap: 4, padding: 4, borderRadius: 12, marginBottom: 20,
         background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
       }}>
         {[
@@ -104,17 +111,17 @@ export default function Upload() {
         ].map(({ id, Icon, label, desc }) => (
           <button key={id} onClick={() => { setMode(id); setFiles([]) }} style={{
             flex: 1, display: 'flex', alignItems: 'center', gap: 12,
-            padding: '10px 14px', borderRadius: 10, textAlign: 'left', cursor: 'pointer',
+            padding: '11px 14px', borderRadius: 9, textAlign: 'left', cursor: 'pointer',
             border: mode === id ? '1px solid var(--accent-ring)' : '1px solid transparent',
             background: mode === id ? 'var(--accent-dim)' : 'transparent',
-            transition: 'all 0.15s',
+            transition: 'all 0.14s',
           }}>
-            <Icon size={15} style={{ color: mode === id ? 'var(--accent)' : 'var(--text-muted)', flexShrink: 0 }} />
+            <Icon size={14} style={{ color: mode === id ? 'var(--accent)' : 'var(--text-muted)', flexShrink: 0 }} />
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: mode === id ? 'var(--accent)' : 'var(--text-muted)' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: mode === id ? 'var(--accent)' : 'var(--text-secondary)' }}>
                 {label}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{desc}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontStyle: 'italic', fontFamily: 'var(--font-display)' }}>{desc}</div>
             </div>
           </button>
         ))}
@@ -127,30 +134,35 @@ export default function Upload() {
         onDragLeave={() => setDragOver(false)}
         onClick={() => fileInputRef.current?.click()}
         style={{
-          borderRadius: 16, padding: '40px 24px', textAlign: 'center', cursor: 'pointer',
-          marginBottom: 16, transition: 'all 0.15s',
+          borderRadius: 14, padding: '44px 24px', textAlign: 'center', cursor: 'pointer',
+          marginBottom: 16, transition: 'all 0.15s', position: 'relative', overflow: 'hidden',
           background: dragOver ? 'var(--accent-dim)' : 'var(--bg-input)',
-          border: dragOver ? '2px dashed var(--accent)' : '2px dashed var(--border-default)',
+          border: `1px dashed ${dragOver ? 'var(--accent)' : 'var(--border-default)'}`,
         }}>
+        {/* Subtle accent glow at top */}
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          background: `radial-gradient(ellipse at 50% 0%, var(--accent-glow), transparent 60%)`,
+        }} />
         <input ref={fileInputRef} type="file" accept=".pdf"
           multiple={mode === 'single'} style={{ display: 'none' }}
           onChange={e => addFiles(e.target.files)} />
 
         <div style={{
-          width: 48, height: 48, borderRadius: 14, margin: '0 auto 16px',
-          background: dragOver ? 'var(--accent-dim)' : 'var(--bg-elevated)',
+          width: 44, height: 44, borderRadius: '50%', margin: '0 auto 14px',
           border: '1px solid var(--border-default)',
+          background: 'var(--bg-card)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'all 0.15s',
+          transition: 'all 0.15s', position: 'relative',
         }}>
-          <CloudUpload size={22} style={{ color: dragOver ? 'var(--accent)' : 'var(--text-muted)' }} />
+          <CloudUpload size={18} style={{ color: dragOver ? 'var(--accent)' : 'var(--text-muted)' }} />
         </div>
-        <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 4 }}>
+        <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 4 }}>
           {dragOver ? 'Drop to upload'
-            : mode === 'bulk' ? 'Drop your compiled CV PDF here'
-            : 'Drag & drop PDF files, or click to browse'}
+            : mode === 'bulk' ? 'Drop your compiled PDF here'
+            : 'Drop PDFs, or click to browse'}
         </p>
-        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>PDF files only</p>
+        <p style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', fontFamily: 'var(--font-display)' }}>PDF files only</p>
       </div>
 
       {/* File list */}
@@ -221,34 +233,32 @@ export default function Upload() {
           </button>
         )}
         {done && (
-          <button onClick={() => navigate('/dashboard')} style={{
-            padding: '11px 20px', borderRadius: 10, fontWeight: 600, fontSize: 14, color: '#fff',
-            border: 'none', cursor: 'pointer',
-            background: 'linear-gradient(135deg, #16a34a, #22c55e)',
-            boxShadow: '0 4px 14px rgba(34,197,94,0.25)',
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            View Results <ArrowRight size={14} />
+          <button onClick={() => navigate('/dashboard')} className="btn-primary"
+            style={{ padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            View results <ArrowRight size={13} />
           </button>
         )}
       </div>
 
       {/* Processing log */}
       {events.length > 0 && (
-        <div style={{ marginTop: 28, borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-subtle)' }}>
+        <div style={{ marginTop: 24, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border-subtle)' }}>
           <div style={{
             padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            background: 'var(--bg-base)', borderBottom: '1px solid var(--border-subtle)',
+            background: 'var(--bg-card)', borderBottom: '1px solid var(--border-subtle)',
           }}>
-            <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
-              Processing Log
+            <span style={{
+              fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em',
+              color: 'var(--text-muted)',
+            }}>Processing log</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', fontFamily: 'var(--font-display)' }}>
+              {events.length} events
             </span>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{events.length} events</span>
           </div>
           <div ref={logRef} style={{
-            maxHeight: 260, overflowY: 'auto', padding: '14px 16px',
-            display: 'flex', flexDirection: 'column', gap: 6,
-            fontFamily: 'monospace', fontSize: 12,
+            maxHeight: 240, overflowY: 'auto', padding: '12px 16px',
+            display: 'flex', flexDirection: 'column', gap: 4,
+            fontFamily: 'var(--font-mono, monospace)', fontSize: 11,
             background: 'var(--bg-input)',
           }}>
             {events.map((ev, i) => {

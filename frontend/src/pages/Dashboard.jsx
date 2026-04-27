@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Users, TrendingUp, FileText, GraduationCap, ArrowRight, SlidersHorizontal, Download } from 'lucide-react'
-import { getCandidates, exportCSV, exportXLSX } from '../api/talash'
+import { Users, TrendingUp, FileText, GraduationCap, ArrowRight, SlidersHorizontal, Download, Trash2 } from 'lucide-react'
+import { getCandidates, exportCSV, exportXLSX, deleteCandidate } from '../api/talash'
 import useCandidateStore from '../store/candidateStore'
 import WeightSliders from '../components/WeightSliders'
+import ConfirmDialog from '../components/ConfirmDialog'
 import usePageTitle from '../hooks/usePageTitle'
 
 function downloadBlob(blob, filename) {
@@ -35,6 +36,7 @@ export default function Dashboard() {
   const [minQ1, setMinQ1]               = useState(0)
   const [error, setError]               = useState(null)
   const [showWeights, setShowWeights]   = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)  // { id, name }
 
   useEffect(() => {
     setLoading(true)
@@ -56,6 +58,13 @@ export default function Dashboard() {
     if (sortKey === 'name') return (a.full_name || '').localeCompare(b.full_name || '')
     return (b[sortKey] || 0) - (a[sortKey] || 0)
   })
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return
+    await deleteCandidate(deleteTarget.id)
+    setCandidates(candidates.filter(c => c.candidate_id !== deleteTarget.id))
+    setDeleteTarget(null)
+  }
 
   const avgScore = candidates.length
     ? (candidates.reduce((s, c) => s + Number(c.computed_score || 0), 0) / candidates.length).toFixed(1)
@@ -86,21 +95,48 @@ export default function Dashboard() {
   return (
     <div style={{ padding: '36px 40px' }}>
 
-      {/* ── Stat cards ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
-        {stats.map(({ label, value, Icon, color, bg, border }) => (
-          <div key={label} className="card" style={{ padding: '20px 22px' }}>
+      {/* ── Conversational page header ── */}
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{
+          fontFamily: 'var(--font-display)', fontWeight: 400,
+          fontSize: 34, letterSpacing: '-0.02em', color: 'var(--text-primary)',
+          lineHeight: 1.1, margin: 0,
+        }}>
+          {candidates.length > 0
+            ? `${candidates.length} candidate${candidates.length !== 1 ? 's' : ''} in this cohort.`
+            : 'No candidates yet.'}
+        </h1>
+        {candidates.length > 0 && (
+          <p style={{
+            fontFamily: 'var(--font-display)', fontStyle: 'italic',
+            fontSize: 14, color: 'var(--text-secondary)', marginTop: 6,
+          }}>
+            {avgScore !== 'N/A'
+              ? `Average composite score is ${avgScore}. Sorted by rank.`
+              : 'Upload CVs to begin analysis.'}
+          </p>
+        )}
+      </div>
+
+      {/* ── Stat strip — hairline-divided, number-led ── */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+        border: '1px solid var(--border-subtle)', borderRadius: 14,
+        background: 'var(--bg-card)', marginBottom: 28, overflow: 'hidden',
+      }}>
+        {stats.map(({ label, value, Icon, color, bg, border }, i, a) => (
+          <div key={label} style={{
+            padding: '18px 22px',
+            borderRight: i < a.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+          }}>
             <div style={{
-              width: 36, height: 36, borderRadius: 10, marginBottom: 14,
-              background: bg, border: `1px solid ${border}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Icon size={16} style={{ color }} />
-            </div>
-            <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.03em', color, marginBottom: 4 }}>
-              {value}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</div>
+              fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 400,
+              color, letterSpacing: '-0.02em', lineHeight: 1,
+            }}>{value}</div>
+            <div style={{
+              fontSize: 12, color: 'var(--text-muted)', marginTop: 6,
+              fontStyle: 'italic', fontFamily: 'var(--font-display)',
+            }}>{label}</div>
           </div>
         ))}
       </div>
@@ -252,16 +288,29 @@ export default function Dashboard() {
                   </td>
 
                   <td style={{ padding: '14px 18px' }}>
-                    <Link to={`/candidate/${c.candidate_id}`} style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 4,
-                      fontSize: 12, fontWeight: 600, color: 'var(--accent)',
-                      textDecoration: 'none', opacity: 0,
-                      transition: 'opacity 0.12s',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                    className="view-link">
-                      View <ArrowRight size={12} />
-                    </Link>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Link to={`/candidate/${c.candidate_id}`} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        fontSize: 12, fontWeight: 600, color: 'var(--accent)',
+                        textDecoration: 'none', opacity: 0, transition: 'opacity 0.12s',
+                      }}
+                      className="view-link">
+                        View <ArrowRight size={12} />
+                      </Link>
+                      <button
+                        onClick={() => setDeleteTarget({ id: c.candidate_id, name: c.full_name })}
+                        className="delete-btn"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 28, height: 28, borderRadius: 7, border: 'none',
+                          background: 'transparent', cursor: 'pointer', opacity: 0,
+                          color: 'var(--text-muted)', transition: 'all 0.12s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(251,113,133,0.12)'; e.currentTarget.style.color = 'var(--error)' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)' }}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -270,7 +319,16 @@ export default function Dashboard() {
         </div>
       )}
 
-      <style>{`tr:hover .view-link { opacity: 1 !important; }`}</style>
+      <style>{`tr:hover .view-link { opacity: 1 !important; } tr:hover .delete-btn { opacity: 1 !important; }`}</style>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Remove candidate?"
+        message={deleteTarget ? `This will permanently delete ${deleteTarget.name} from the candidate list. This action cannot be undone.` : ''}
+        confirmLabel="Remove"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }
