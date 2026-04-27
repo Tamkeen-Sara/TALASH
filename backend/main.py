@@ -187,24 +187,24 @@ async def upload_cvs(files: list[UploadFile] = File(...), jd: str = Form("")):
                 if profile.missing_info:
                     try:
                         profile.missing_info_email_draft = await draft_missing_info_email(profile)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[email_drafter] Failed for {profile.full_name}: {e}")
 
-                # Step 8: Generate candidate summary (non-fatal)
+                # Step 8: Compute total score FIRST so summary has the correct value
+                profile.score_total = compute_total_score(
+                    profile.score_education, profile.score_research,
+                    profile.score_employment, profile.score_skills, profile.score_supervision
+                )
+
+                # Step 9: Generate candidate summary (non-fatal)
                 try:
                     summary = await generate_candidate_summary(profile)
                     profile.recommendation      = summary["recommendation"]
                     profile.key_strengths       = summary["strengths"]
                     profile.key_concerns        = summary["concerns"]
                     profile.score_justification = summary["justification"]
-                except Exception:
-                    pass
-
-                # Step 9: Compute total score
-                profile.score_total = compute_total_score(
-                    profile.score_education, profile.score_research,
-                    profile.score_employment, profile.score_skills, profile.score_supervision
-                )
+                except Exception as e:
+                    print(f"[candidate_summary] Failed for {profile.full_name}: {e}")
 
                 _candidates[profile.candidate_id] = profile
                 _save_store()
@@ -272,13 +272,22 @@ async def upload_bulk_pdf(file: UploadFile = File(...), jd: str = Form("")):
                 if profile.missing_info:
                     try:
                         profile.missing_info_email_draft = await draft_missing_info_email(profile)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[email_drafter] Failed for {profile.full_name}: {e}")
 
                 profile.score_total = compute_total_score(
                     profile.score_education, profile.score_research,
                     profile.score_employment, profile.score_skills, profile.score_supervision
                 )
+
+                try:
+                    summary = await generate_candidate_summary(profile)
+                    profile.recommendation      = summary["recommendation"]
+                    profile.key_strengths       = summary["strengths"]
+                    profile.key_concerns        = summary["concerns"]
+                    profile.score_justification = summary["justification"]
+                except Exception as e:
+                    print(f"[candidate_summary] Failed for {profile.full_name}: {e}")
 
                 _candidates[profile.candidate_id] = profile
                 _save_store()
