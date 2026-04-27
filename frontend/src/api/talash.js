@@ -21,6 +21,12 @@ export const exportXLSX = () =>
 export const downloadReport = (id) =>
   api.get(`/report/${id}`, { responseType: 'blob' })
 
+export const getMissingInfoEmail = (id) =>
+  api.get(`/candidates/${id}/email`)
+
+export const deleteCandidate = (id) =>
+  api.delete(`/candidates/${id}`)
+
 // Parse SSE events from an XHR stream without duplicates.
 // SSE events are separated by \n\n, so split on that boundary
 // and keep incomplete trailing event in a buffer for the next tick.

@@ -42,26 +42,41 @@ export default function Sidebar() {
   return (
     <aside style={{ ...S.aside, background: bg, borderRight: `1px solid ${borderColor}` }}>
 
-      {/* Logo */}
+      {/* Wordmark */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 11,
+        display: 'flex', alignItems: 'center', gap: 10,
         padding: '0 18px', height: 58,
         borderBottom: `1px solid ${borderColor}`,
       }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 9, flexShrink: 0,
-          background: 'linear-gradient(135deg, #e8930a, #f5b030)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 800, fontSize: 14, color: '#fff',
-          boxShadow: '0 2px 10px rgba(232,147,10,0.38)',
-        }}>T</div>
+        {/* Mark: serif T in hairline circle + amber lozenge */}
+        <div style={{ position: 'relative', width: 30, height: 30, flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            border: `1px solid ${isDark ? 'rgba(240,225,200,0.18)' : 'rgba(45,30,15,0.20)'}`,
+          }} />
+          <div style={{
+            position: 'absolute', top: -2, right: -2,
+            width: 7, height: 7, background: 'var(--accent)',
+            transform: 'rotate(45deg)',
+            boxShadow: '0 0 8px var(--accent-glow)',
+          }} />
+          <span style={{
+            fontFamily: 'var(--font-display)', fontWeight: 500,
+            fontSize: 15, color: 'var(--text-primary)',
+            letterSpacing: '-0.02em', marginTop: -1,
+          }}>T</span>
+        </div>
         <div>
-          <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: 14, letterSpacing: '-0.02em' }}>
-            TALASH
-          </div>
-          <div style={{ color: 'var(--text-muted)', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: 1 }}>
-            Recruitment AI
-          </div>
+          <div style={{
+            fontFamily: 'var(--font-display)', fontWeight: 500,
+            fontSize: 15, color: 'var(--text-primary)',
+            letterSpacing: '0.02em', lineHeight: 1,
+          }}>TALASH</div>
+          <div style={{
+            fontSize: 9, fontWeight: 500, color: 'var(--text-muted)',
+            letterSpacing: '0.18em', textTransform: 'uppercase', marginTop: 3,
+          }}>Smart Hiring</div>
         </div>
       </div>
 
@@ -77,7 +92,7 @@ export default function Sidebar() {
             <Users size={13} style={{ color: 'var(--accent)' }} />
             <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)' }}>Candidates</span>
           </div>
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-light, var(--accent))' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 400, color: 'var(--accent-light, var(--accent))', letterSpacing: '-0.02em' }}>
             {candidates.length}
           </span>
         </div>
