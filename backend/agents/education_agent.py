@@ -11,10 +11,24 @@ from backend.schemas.education import EducationProfile, DegreeRecord
 from backend.schemas.candidate import EmploymentProfile
 
 
-SENIORITY_LEVEL = {
-    "PhD": 25, "MS": 18, "MPhil": 18, "MBA": 15,
-    "BS": 12, "BSc": 10, "BE": 12, "Other": 8
-}
+def _degree_tier(level: str) -> str:
+    """
+    Map a free-form degree level string to one of three tiers used for scoring:
+    'doctoral', 'postgrad', 'undergrad', or 'other'.
+    Uses keyword detection so non-standard level strings still score correctly.
+    """
+    if not level:
+        return "other"
+    sl = level.lower()
+    if any(k in sl for k in ("phd", "ph.d", "doctor", "doctorate", "dphil")):
+        return "doctoral"
+    if any(k in sl for k in ("ms", "msc", "mphil", "mba", "master", "postgrad",
+                              "m.sc", "m.eng", "meng", "m.tech", "laurea magistrale")):
+        return "postgrad"
+    if any(k in sl for k in ("bs", "bsc", "be", "bachelor", "undergrad",
+                              "b.sc", "b.eng", "beng", "b.tech", "laurea triennale")):
+        return "undergrad"
+    return "other"
 
 
 def normalize_to_4_scale(value: float, scale: float = None, is_percentage: bool = False) -> float:
@@ -34,7 +48,16 @@ def normalize_to_4_scale(value: float, scale: float = None, is_percentage: bool 
     return value
 
 
-_DEGREE_DURATION = {"PhD": 5, "MS": 2, "MPhil": 2, "MBA": 2, "BS": 4, "BE": 4, "BSc": 3}
+def _degree_duration(level: str) -> int:
+    """Estimate typical duration in years from a free-form degree level string."""
+    t = _degree_tier(level)
+    if t == "doctoral":
+        return 5
+    if t == "postgrad":
+        return 2
+    if t == "undergrad":
+        return 4
+    return 3  # unknown — assume mid-length
 
 
 def detect_education_gaps(edu: EducationProfile, emp: EmploymentProfile) -> list[dict]:
@@ -53,7 +76,7 @@ def detect_education_gaps(edu: EducationProfile, emp: EmploymentProfile) -> list
         if s and e and s < e:
             edu_tree.addi(s, e, d)
         elif e:
-            duration = _DEGREE_DURATION.get(d.level, 3)
+            duration = _degree_duration(d.level)
             edu_tree.addi(e - duration, e, d)
 
     sse_yr = edu.sse.year if edu.sse else None
@@ -110,8 +133,9 @@ def score_education(edu: EducationProfile, emp: EmploymentProfile) -> tuple[floa
             d.cgpa_normalized = normalize_to_4_scale(d.percentage, is_percentage=True)
 
     # Academic Performance (40 pts)
-    pg_degrees = [d for d in edu.degrees if d.level in ("MS", "MPhil", "MBA", "PhD")]
-    ug_degrees = [d for d in edu.degrees if d.level in ("BS", "BSc", "BE")]
+    tiers = [(d, _degree_tier(d.level)) for d in edu.degrees]
+    pg_degrees = [d for d, t in tiers if t in ("doctoral", "postgrad")]
+    ug_degrees = [d for d, t in tiers if t == "undergrad"]
     pg_cgpa = max((d.cgpa_normalized for d in pg_degrees if d.cgpa_normalized), default=None)
     ug_cgpa = max((d.cgpa_normalized for d in ug_degrees if d.cgpa_normalized), default=None)
     perf_score = 0
@@ -123,16 +147,14 @@ def score_education(edu: EducationProfile, emp: EmploymentProfile) -> tuple[floa
     breakdown["academic_performance"] = round(perf_score, 2)
 
     # Highest Qualification (25 pts)
-    levels = [d.level for d in edu.degrees]
+    degree_tiers = {t for _, t in tiers}
     qual_score = 0
-    if "PhD" in levels:
+    if "doctoral" in degree_tiers:
         qual_score = 25
-    elif "MS" in levels or "MPhil" in levels:
+    elif "postgrad" in degree_tiers:
         qual_score = 18
-    elif "BS" in levels or "BE" in levels:
+    elif "undergrad" in degree_tiers:
         qual_score = 12
-    elif "BSc" in levels:
-        qual_score = 10
     breakdown["highest_qualification"] = qual_score
 
     # Institutional Quality (20 pts)
