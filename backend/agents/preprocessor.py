@@ -1,4 +1,4 @@
-"""
+﻿"""
 Module 0: Preprocessing Pipeline
 PDF CV → validated CandidateProfile JSON in under 10 seconds.
 Two-pass extraction: pdfplumber (tables) + PyMuPDF (complex layouts)
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pdfplumber
 import fitz  # PyMuPDF
-from groq import AsyncGroq
 
 from backend.config import settings
+from backend.utils.groq_client import groq_chat
 from backend.schemas.candidate import (
     CandidateProfile, EmploymentProfile, EmploymentRecord, SkillProfile, MissingInfo
 )
@@ -23,7 +23,6 @@ from backend.schemas.research import (
     ResearchProfile, JournalPaper, ConferencePaper, Book, Patent, SupervisionRecord
 )
 
-client = AsyncGroq(api_key=settings.groq_api_key)
 
 EXTRACTION_SYSTEM_PROMPT = """You are a precise CV data extractor for an academic HR system.
 
@@ -37,6 +36,10 @@ RULES:
 7. Detect candidate position in author list (1=first, 2=second, etc.).
 8. For degree level: map to one of: BS, BSc, BE, MS, MPhil, MBA, PhD, Other.
 9. Flag missing_info for any field that appears intentionally omitted.
+10. For journal_name: extract the COMPLETE full journal name exactly as written. NEVER truncate. BAD: "International Journal", "IEEE Transactions", "Journal of". GOOD: "International Journal of Advanced Computer Science and Applications", "IEEE Transactions on Neural Networks and Learning Systems". If unsure of the full name, copy it verbatim from the CV text.
+11. For conference_name: extract the COMPLETE full conference name. NEVER truncate. BAD: "International Conference", "Workshop on". GOOD: "International Conference on Machine Learning", "IEEE Workshop on Neural Signals". Copy verbatim from the CV text.
+12. For institution: extract the full institution name including campus if stated (e.g. "COMSATS University Islamabad, Abbottabad Campus").
+13. For claimed_skills: extract ALL skills listed anywhere in the CV — in sections labeled "Skills", "Technical Skills", "Core Competencies", "Areas of Expertise", "Research Skills", "Programming Languages", "Tools & Technologies", "Key Skills", "Competencies", or any similar heading. Also extract skills mentioned inline (e.g. "proficient in Python", "expertise in machine learning"). Return each skill as a short phrase (1–4 words). If no skills section exists, return [].
 
 Return ONLY valid JSON matching the schema below. No preamble. No explanation.
 
@@ -126,7 +129,7 @@ async def extract_cv(pdf_path: str) -> CandidateProfile:
     raw_text = extract_raw_text(pdf_path)
     filename = Path(pdf_path).name
 
-    response = await client.chat.completions.create(
+    response = await groq_chat(
         model=settings.extraction_model,
         max_tokens=4096,
         temperature=0.1,
@@ -192,3 +195,4 @@ def _parse_supervision(raw: dict) -> SupervisionRecord:
         year_graduated=raw.get("year_graduated"),
         thesis_title=raw.get("thesis_title"),
     )
+
