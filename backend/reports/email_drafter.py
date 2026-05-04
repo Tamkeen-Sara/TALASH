@@ -1,7 +1,11 @@
-﻿"""
-Personalized Missing-Info Email Generator + Candidate Summary Generator
-Uses Groq LLM to generate human-sounding emails and candidate summaries.
 """
+Personalized Missing-Info Email Generator + Candidate Summary Generator
++ Interview Question Generator + Research Trajectory Predictor
++ CV Quality Score + Comparison Narrative
+
+All LLM calls use Groq (llama-3.3-70b-versatile).
+"""
+import json
 from backend.schemas.candidate import CandidateProfile, MissingInfo
 from backend.config import settings
 from backend.utils.groq_client import groq_chat
@@ -112,4 +116,261 @@ Only return valid JSON, no other text."""
             "concerns": [],
             "justification": "",
         }
+
+
+# ── CV Quality Score (formula — no LLM) ──────────────────────────────────────
+
+def compute_cv_quality_score(candidate: CandidateProfile) -> float:
+    """
+    Objective, formula-based quality score (0–100) across three dimensions:
+
+    Completeness (40 pts) — are the key CV sections present?
+    Verifiability (40 pts) — could the system independently confirm stated facts?
+    Integrity     (20 pts) — absence of red flags (predatory venues, unexplained gaps)
+
+    No LLM involved — runs instantly after all verifiers have completed.
+    """
+    score = 0.0
+    edu   = candidate.education
+    res   = candidate.research
+    emp   = candidate.employment
+
+    degrees  = edu.degrees  or []
+    journals = res.journal_papers    or []
+    confs    = res.conference_papers or []
+
+    # ── Completeness (40 pts) ─────────────────────────────────────────────────
+    if candidate.email or candidate.phone:
+        score += 8                               # contact info present
+    if degrees:
+        score += 6                               # at least one degree
+    if any(d.cgpa or d.percentage for d in degrees):
+        score += 6                               # academic marks on file
+    if journals or confs:
+        score += 8                               # has publications
+    if emp.records:
+        score += 6                               # employment history present
+    if candidate.skills.claimed_skills:
+        score += 6                               # skills section filled
+
+    # ── Verifiability (40 pts) ────────────────────────────────────────────────
+    # Journals — fraction that were resolved beyond "unverified"
+    if journals:
+        verified_j = sum(1 for p in journals
+                         if p.verification_source and p.verification_source != "unverified")
+        score += (verified_j / len(journals)) * 15
+    else:
+        score += 15   # no journals to verify — neutral
+
+    # Conferences — fraction with any CORE rank or Scimago quartile
+    if confs:
+        verified_c = sum(1 for p in confs
+                         if p.core_rank or p.scimago_quartile or p.venue_quality_tier)
+        score += (verified_c / len(confs)) * 10
+    else:
+        score += 10   # neutral
+
+    # Institution recognized by HEC / ROR
+    if any(getattr(d, "hec_recognized", False) for d in degrees):
+        score += 10
+
+    # Academic profile independently confirmed online
+    if candidate.orcid_id or candidate.openalex_author_id:
+        score += 5
+
+    # ── Integrity (20 pts) ────────────────────────────────────────────────────
+    # Predatory penalty: -3 per predatory paper, floor 0
+    pred = res.predatory_count or 0
+    score += max(0.0, 10.0 - pred * 3)
+
+    # Unjustified education gaps: -2 per gap, floor 0
+    unjustified = edu.score_breakdown.get("unjustified_gaps", 0) or 0
+    score += max(0.0, 10.0 - unjustified * 2)
+
+    return round(min(100.0, max(0.0, score)), 1)
+
+
+# ── Interview Question Generator ──────────────────────────────────────────────
+
+async def generate_interview_questions(candidate: CandidateProfile) -> list[dict]:
+    """
+    Generate 8 targeted interview questions using Groq:
+      3 × strength  — probe and validate the candidate's strongest areas
+      3 × gap       — directly address specific weaknesses or concerns
+      2 × future    — explore research plans and teaching vision
+
+    Returns list[dict] with keys: question, category, rationale
+    """
+    res = candidate.research
+    emp = candidate.employment
+
+    total_papers  = len(res.journal_papers or []) + len(res.conference_papers or [])
+    top_papers    = sorted(
+        (res.journal_papers or []),
+        key=lambda p: (p.wos_quartile == "Q1", p.citation_count or 0),
+        reverse=True
+    )[:3]
+    paper_lines   = "\n".join(
+        f"  - {p.title[:80]} ({p.resolved_journal_name or p.journal_name}, {p.wos_quartile or 'Unranked'})"
+        for p in top_papers
+    ) or "  None listed"
+
+    context = f"""Candidate: {candidate.full_name}
+Research Score: {candidate.score_research or 0}/100 | Education: {candidate.score_education or 0}/100
+Employment Score: {candidate.score_employment or 0}/100 | Supervision: {candidate.score_supervision or 0}/100
+H-Index: {res.h_index or 0} | Q1 Papers: {res.q1_count or 0} | Total Papers: {total_papers}
+Dominant Research Area: {res.dominant_topic or 'Unknown'}
+Predatory Papers: {res.predatory_count or 0}
+Employment Gaps Flagged: {len(emp.gaps or [])}
+Recommendation: {candidate.recommendation or 'Conditional'}
+Key Strengths: {', '.join(candidate.key_strengths[:3]) if candidate.key_strengths else 'None identified'}
+Key Concerns: {', '.join(candidate.key_concerns[:3]) if candidate.key_concerns else 'None identified'}
+
+Top Publications:
+{paper_lines}"""
+
+    prompt = f"""You are a faculty hiring committee preparing for an interview with a specific candidate.
+
+{context}
+
+Generate exactly 8 targeted interview questions for this specific candidate.
+
+Return ONLY this JSON object:
+{{"questions": [
+  {{"question": "...", "category": "strength", "rationale": "one sentence why this question matters for this candidate"}},
+  ...
+]}}
+
+Distribution: exactly 3 "strength", exactly 3 "gap", exactly 2 "future".
+- strength: probe depth and validate their best areas (cite specifics from their profile)
+- gap: directly address the concerns listed above (be direct, not generic)
+- future: explore research direction and teaching contributions to the department
+Questions must be specific to this candidate — no generic PhD interview questions."""
+
+    try:
+        response = await groq_chat(
+            model=settings.reasoning_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            max_tokens=900,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(response.choices[0].message.content.strip())
+        questions = data.get("questions", [])
+        # Validate structure
+        valid = [
+            q for q in questions
+            if isinstance(q, dict) and q.get("question") and q.get("category") and q.get("rationale")
+        ]
+        return valid[:8]
+    except Exception as e:
+        print(f"[interview_questions] Failed for {candidate.full_name}: {e}")
+        return []
+
+
+# ── Research Trajectory Predictor ────────────────────────────────────────────
+
+async def generate_research_trajectory(candidate: CandidateProfile) -> str:
+    """
+    Generate a 120-150 word narrative predicting the candidate's future research
+    direction based on their topic cluster distribution and temporal trend.
+    Returns empty string if no topic data is available.
+    """
+    res     = candidate.research
+    clusters = res.topic_clusters or []
+    trend    = res.topic_trend    or []
+
+    if not clusters:
+        return ""
+
+    theme_lines = "\n".join(
+        f"  {c['domain']} — {c['count']} papers ({c['percentage']}%)"
+        for c in clusters[:6]
+    )
+    trend_lines = "\n".join(
+        f"  {t['period']}: {t['dominant_domain']} ({t['count']} papers)"
+        for t in trend
+    ) if trend else "  Insufficient data for temporal trend"
+
+    prompt = f"""You are analyzing a researcher's publication record to predict their future direction.
+
+Researcher: {candidate.full_name}
+Dominant Research Area: {res.dominant_topic or 'Unknown'}
+Research Diversity Score: {res.topic_diversity_score:.2f if res.topic_diversity_score is not None else 'N/A'} (0=deep specialist, 1=broad generalist)
+H-Index: {res.h_index or 0} | Total Publications: {len(res.journal_papers or []) + len(res.conference_papers or [])}
+
+Publication Theme Distribution:
+{theme_lines}
+
+Research Trend Over Time:
+{trend_lines}
+
+Write exactly 120-150 words predicting this researcher's likely future research direction.
+Be technically specific — name actual research areas, methods, and application domains.
+Base it strictly on the trajectory shown above. Third person. No bullet points. No headers."""
+
+    try:
+        response = await groq_chat(
+            model=settings.reasoning_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            max_tokens=300,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"[research_trajectory] Failed for {candidate.full_name}: {e}")
+        return ""
+
+
+# ── Comparison Narrative ──────────────────────────────────────────────────────
+
+async def generate_comparison_narrative(candidates: list[CandidateProfile]) -> str:
+    """
+    Generate a 200-word comparative analysis of 2–4 candidates using Groq.
+    Identifies the strongest candidate and explains why.
+    """
+    if len(candidates) < 2:
+        return ""
+
+    ranked = sorted(candidates, key=lambda c: c.score_total or 0, reverse=True)
+
+    candidate_blocks = []
+    for c in ranked:
+        res = c.research
+        block = (
+            f"{c.full_name} (Total: {c.score_total or 0:.1f}/100)\n"
+            f"  Research {c.score_research or 0} | Education {c.score_education or 0} | "
+            f"Employment {c.score_employment or 0} | Skills {c.score_skills or 0}\n"
+            f"  H-Index: {res.h_index or 0} | Q1 Papers: {res.q1_count or 0} | "
+            f"Predatory: {res.predatory_count or 0}\n"
+            f"  Dominant Area: {res.dominant_topic or 'N/A'}\n"
+            f"  Recommendation: {c.recommendation or 'Conditional'}\n"
+            f"  Strengths: {'; '.join(c.key_strengths[:2]) if c.key_strengths else 'N/A'}\n"
+            f"  Concerns:  {'; '.join(c.key_concerns[:2]) if c.key_concerns else 'N/A'}"
+        )
+        candidate_blocks.append(block)
+
+    prompt = f"""You are the chair of a faculty hiring committee. You have reviewed {len(ranked)} candidates:
+
+{chr(10).join(candidate_blocks)}
+
+Write a 180-220 word comparative analysis covering:
+1. Why {ranked[0].full_name} leads the field — be specific about their measurable advantages
+2. How the candidates differ in research quality, depth, and breadth
+3. Notable strengths or red flags for the second-ranked candidate
+4. A clear, actionable hiring recommendation
+
+Professional prose, third person, no bullet points, no headers."""
+
+    try:
+        response = await groq_chat(
+            model=settings.reasoning_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.35,
+            max_tokens=450,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"[comparison_narrative] Failed: {e}")
+        return ""
 
