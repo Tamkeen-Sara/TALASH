@@ -70,6 +70,8 @@ class ConferencePaper(BaseModel):
     is_scopus_indexed: Optional[bool] = None
     verification_source: Optional[str] = None
     resolved_conference_name: Optional[str] = None  # full name from CORE/DBLP/Scimago
+    venue_h_index: Optional[int] = None             # OpenAlex h-index for this venue
+    venue_quality_tier: Optional[str] = None        # Elite/Excellent/Good/Recognized/Known/Marginal
 
     @model_validator(mode="before")
     @classmethod
@@ -166,7 +168,18 @@ class ResearchProfile(BaseModel):
     a_conf_count: int = 0
     predatory_count: int = 0
     research_score: Optional[float] = None
-    topic_diversity_score: Optional[float] = None
+    # ── Topic variability (§3.6) ───────────────────────────────────────────────
+    topic_diversity_score: Optional[float] = None   # 0.0 = focused, 1.0 = diverse
     dominant_topic: Optional[str] = None
-    topic_distribution: dict = {}
+    topic_distribution: dict = {}                   # {domain: count}
+    topic_clusters: list[dict] = []                 # [{domain, count, percentage, papers[]}]
+    topic_trend: list[dict] = []                    # [{period, dominant_domain, count}]
+    # ── Co-author analysis (§3.7) ─────────────────────────────────────────────
+    unique_coauthors: int = 0
+    avg_coauthors_per_paper: float = 0.0
+    top_collaborators: list[dict] = []              # [{name, count, papers[]}]
+    recurring_collaborator_count: int = 0           # collaborators in > 1 paper
+    recurring_proportion: float = 0.0               # papers containing a recurring collaborator / total
+    collaboration_diversity_score: float = 0.0      # entropy of collaborator frequency distribution
+    student_collaborations: list[str] = []          # student names found as co-authors
     score_breakdown: dict = {}

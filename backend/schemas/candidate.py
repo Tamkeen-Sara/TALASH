@@ -142,6 +142,16 @@ class CandidateProfile(BaseModel):
     key_strengths: list[str] = []
     key_concerns: list[str] = []
 
+    # Academic identity enrichment (profile_enricher agent)
+    orcid_id:             Optional[str] = None
+    orcid_profile_url:    Optional[str] = None
+    openalex_author_id:   Optional[str] = None
+    openalex_profile_url: Optional[str] = None
+    semantic_scholar_id:  Optional[str] = None
+    enriched_email:       Optional[str] = None   # from ORCID public profile only
+    enriched_h_index:     Optional[int] = None   # independently verified
+    enriched_citations:   Optional[int] = None   # independently verified
+
     # Processing metadata
     processing_status: str = "pending"
     processing_error: Optional[str] = None
