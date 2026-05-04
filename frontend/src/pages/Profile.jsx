@@ -42,18 +42,17 @@ export default function Profile() {
   return (
     <div style={{ maxWidth: 820, padding: '36px 40px', margin: '0 auto' }}>
 
-      {/* ── Profile banner ── flat, dignified, single warm glow ── */}
-      <div style={{ position: 'relative', marginBottom: 60 }}>
+      {/* ── Profile banner ── */}
+      <div style={{ marginBottom: 28 }}>
+        {/* Banner strip */}
         <div style={{
           height: 110, borderRadius: 14, position: 'relative', overflow: 'hidden',
           background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
         }}>
-          {/* Single warm radial glow */}
           <div style={{
             position: 'absolute', inset: 0,
             background: 'radial-gradient(ellipse at 80% 20%, var(--accent-glow), transparent 60%)',
           }} />
-          {/* Company tag */}
           <div style={{
             position: 'absolute', top: 16, right: 20,
             fontSize: 10, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase',
@@ -61,32 +60,39 @@ export default function Profile() {
           }}>TALASH · Talent Team</div>
         </div>
 
-        {/* Avatar bridging banner and body */}
-        <div style={{ position: 'absolute', top: 70, left: 28, zIndex: 2 }}>
-          {user?.picture
-            ? <img src={user.picture} alt={user.name} style={{
-                width: 76, height: 76, borderRadius: 14, objectFit: 'cover', display: 'block',
-                border: '4px solid var(--bg-base)',
-              }} />
-            : <div style={{
-                width: 76, height: 76, borderRadius: 14,
-                background: 'linear-gradient(135deg, var(--accent), var(--accent-light))',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontFamily: 'var(--font-display)', color: '#1d1408', fontSize: 28, fontWeight: 500,
-                border: '4px solid var(--bg-base)',
-              }}>{initials}</div>
-          }
-        </div>
+        {/* Avatar + name row — avatar uses negative margin to straddle the banner */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', paddingLeft: 28, paddingTop: 0 }}>
+          {/* Avatar */}
+          <div style={{ marginTop: -36, marginRight: 18, flexShrink: 0, zIndex: 2 }}>
+            {user?.picture
+              ? <img src={user.picture} alt={user.name} style={{
+                  width: 76, height: 76, borderRadius: 14, objectFit: 'cover', display: 'block',
+                  border: '4px solid var(--bg-base)',
+                }} />
+              : <div style={{
+                  width: 76, height: 76, borderRadius: 14,
+                  background: 'linear-gradient(135deg, var(--accent), var(--accent-light))',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: 'var(--font-display)', color: '#1d1408', fontSize: 28, fontWeight: 500,
+                  border: '4px solid var(--bg-base)',
+                }}>{initials}</div>
+            }
+          </div>
 
-        {/* Name + role */}
-        <div style={{ position: 'absolute', top: 124, left: 120 }}>
-          <h1 style={{
-            fontFamily: 'var(--font-display)', fontWeight: 400, fontSize: 22,
-            color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em',
-          }}>{user?.name}</h1>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>
-            {user?.role} · {user?.email}
-          </p>
+          {/* Name + role — flows naturally, no overflow */}
+          <div style={{ paddingBottom: 6, minWidth: 0, flex: 1 }}>
+            <h1 style={{
+              fontFamily: 'var(--font-display)', fontWeight: 400, fontSize: 22,
+              color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>{user?.name}</h1>
+            <p style={{
+              fontSize: 13, color: 'var(--text-secondary)', marginTop: 3,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              {user?.role} · {user?.email}
+            </p>
+          </div>
         </div>
       </div>
 

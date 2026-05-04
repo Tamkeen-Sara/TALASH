@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { ArrowLeft, Users } from 'lucide-react'
-import { getCandidates, getCandidate } from '../api/talash'
+import { ArrowLeft, Users, Loader2, Sparkles } from 'lucide-react'
+import { getCandidates, getCandidate, getCompareNarrative } from '../api/talash'
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell,
@@ -47,6 +47,8 @@ export default function Compare() {
   const [selected, setSelected]           = useState([])
   const [details, setDetails]             = useState([])
   const [loading, setLoading]             = useState(false)
+  const [narrative, setNarrative]         = useState('')
+  const [narrativeLoading, setNarrativeLoading] = useState(false)
   const { candidates: storeCandidates, weights } = useCandidateStore()
 
   useEffect(() => {
@@ -69,10 +71,23 @@ export default function Compare() {
     [details, storeCandidates, weights]
   )
 
-  const toggle = (id) => setSelected(prev =>
-    prev.includes(id) ? prev.filter(x => x !== id)
-      : prev.length < 4 ? [...prev, id] : prev
-  )
+  const toggle = (id) => {
+    setSelected(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id)
+        : prev.length < 4 ? [...prev, id] : prev
+    )
+    setNarrative('')
+  }
+
+  const fetchNarrative = async () => {
+    if (selected.length < 2) return
+    setNarrativeLoading(true)
+    try {
+      const r = await getCompareNarrative(selected)
+      setNarrative(r.data.narrative)
+    } catch { setNarrative('Could not generate analysis. Please try again.') }
+    setNarrativeLoading(false)
+  }
 
   const radarData = DIMS.map(({ key, label }) => {
     const entry = { dimension: label }
@@ -95,6 +110,32 @@ export default function Compare() {
     { metric: 'A*/A Conf.',   ...Object.fromEntries(enrichedDetails.map((c, i) => [`s${i}`, (c.research?.astar_conf_count || 0) + (c.research?.a_conf_count || 0)])) },
     { metric: 'Citations',    ...Object.fromEntries(enrichedDetails.map((c, i) => [`s${i}`, c.research?.total_citations || 0])) },
   ]
+
+  // Topics & network comparison data
+  const topicNetworkMetrics = [
+    {
+      metric: 'Topic Diversity',
+      ...Object.fromEntries(enrichedDetails.map((c, i) => [
+        `s${i}`, Math.round((c.research?.topic_diversity_score || 0) * 100),
+      ])),
+    },
+    {
+      metric: 'Collab. Diversity',
+      ...Object.fromEntries(enrichedDetails.map((c, i) => [
+        `s${i}`, Math.round((c.research?.collaboration_diversity_score || 0) * 100),
+      ])),
+    },
+    {
+      metric: 'Recurring Collabs',
+      ...Object.fromEntries(enrichedDetails.map((c, i) => [
+        `s${i}`, Math.round((c.research?.recurring_proportion || 0) * 100),
+      ])),
+    },
+  ]
+
+  const hasTopicData = enrichedDetails.some(
+    c => c.research?.topic_diversity_score != null || c.research?.unique_coauthors > 0
+  )
 
   // Publication breakdown: stacked bars per candidate showing tier distribution
   const pubBreakdown = enrichedDetails.map((c, i) => {
@@ -329,6 +370,102 @@ export default function Compare() {
             </div>
           </div>
 
+
+          {/* ── Topics & network comparison ── */}
+          {hasTopicData && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginBottom: 18 }}>
+
+              {/* Diversity scores chart */}
+              <div className="card" style={{ padding: '24px 28px' }}>
+                <p style={{
+                  fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+                  letterSpacing: '0.14em', color: 'var(--text-muted)', marginBottom: 18,
+                }}>Research diversity scores (0 – 100%)</p>
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={topicNetworkMetrics} layout="vertical" barGap={3} barCategoryGap="28%">
+                    <CartesianGrid horizontal={false} stroke="var(--border-subtle)" />
+                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="metric" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} width={100} />
+                    <Tooltip
+                      contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: 10, fontSize: 12 }}
+                      formatter={(v, name) => [v + '%', name]}
+                      cursor={{ fill: 'var(--bg-elevated)' }}
+                    />
+                    {enrichedDetails.map((c, i) => (
+                      <Bar key={c.candidate_id} dataKey={`s${i}`} name={c.full_name?.split(' ')[0]} fill={COLORS[i].stroke} radius={[0, 3, 3, 0]} maxBarSize={14} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Network stats table */}
+              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-base)' }}>
+                  <p style={{
+                    fontSize: 10, fontWeight: 600, letterSpacing: '0.14em',
+                    textTransform: 'uppercase', color: 'var(--text-muted)', margin: 0,
+                  }}>Co-author network stats</p>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <th style={{ padding: '9px 16px', textAlign: 'left', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Metric</th>
+                      {enrichedDetails.map((c, i) => (
+                        <th key={i} style={{ padding: '9px 16px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: COLORS[i].stroke, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          {c.full_name?.split(' ')[0]}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { label: 'Dominant Topic',     fn: c => c.research?.dominant_topic
+                          ? (c.research.dominant_topic.length > 18 ? c.research.dominant_topic.slice(0, 17) + '…' : c.research.dominant_topic)
+                          : '—', isText: true },
+                      { label: 'Active Domains',     fn: c => c.research?.topic_clusters?.length ?? '—' },
+                      { label: 'Unique Co-authors',  fn: c => c.research?.unique_coauthors ?? '—' },
+                      { label: 'Avg / Paper',        fn: c => c.research?.avg_coauthors_per_paper != null
+                          ? c.research.avg_coauthors_per_paper.toFixed(1) : '—' },
+                      { label: 'Recurring Collabs',  fn: c => c.research?.recurring_collaborator_count ?? '—' },
+                    ].map(({ label, fn, isText }, rowIdx) => {
+                      const vals = enrichedDetails.map(c => fn(c))
+                      const numVals = vals.map(v => parseFloat(v)).filter(v => !isNaN(v))
+                      const maxNum = numVals.length ? Math.max(...numVals) : null
+                      return (
+                        <tr key={rowIdx}
+                          style={{ borderBottom: '1px solid var(--border-subtle)', transition: 'background 0.12s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <td style={{ padding: '10px 16px', color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</td>
+                          {vals.map((val, i) => {
+                            const numVal = parseFloat(val)
+                            const isMax = !isText && maxNum !== null && numVal === maxNum && maxNum > 0
+                            return (
+                              <td key={i} style={{
+                                padding: '10px 16px',
+                                textAlign: isText ? 'left' : 'right',
+                                fontWeight: isMax ? 700 : 400,
+                                color: isMax ? COLORS[i].stroke : 'var(--text-muted)',
+                                background: isMax ? COLORS[i].bg : 'transparent',
+                                fontSize: isText ? 10 : 12,
+                                whiteSpace: isText ? 'normal' : 'nowrap',
+                                wordBreak: isText ? 'break-word' : 'normal',
+                              }}>
+                                {val}
+                                {isMax && <span style={{ marginLeft: 4, fontSize: 8, opacity: 0.7 }}>▲</span>}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+          )}
+
           {/* ── Recommendation card ── */}
           {winner && (
             <div style={{
@@ -357,6 +494,59 @@ export default function Compare() {
                   {winner.summary.justification.slice(0, 140)}
                   {winner.summary.justification.length > 140 ? '…' : ''}
                 </p>
+              )}
+            </div>
+          )}
+
+
+          {/* ── AI Comparative Analysis ── */}
+          {enrichedDetails.length >= 2 && (
+            <div style={{ marginBottom: 18 }}>
+              {!narrative && !narrativeLoading && (
+                <button onClick={fetchNarrative} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 18px', borderRadius: 10, cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600, border: 'none',
+                  background: 'var(--accent-dim)', color: 'var(--accent)',
+                  boxShadow: '0 0 0 1px var(--accent-ring)', transition: 'all 0.14s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'var(--accent-dim)'}>
+                  <Sparkles size={14} />
+                  Generate AI Comparative Analysis
+                </button>
+              )}
+              {narrativeLoading && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+                  <Loader2 size={14} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                  Generating analysis with Groq...
+                </div>
+              )}
+              {narrative && (
+                <div style={{
+                  padding: '20px 24px', borderRadius: 12,
+                  background: 'var(--bg-card)',
+                  borderTop: '1px solid var(--border-subtle)',
+                  borderRight: '1px solid var(--border-subtle)',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  borderLeft: '3px solid var(--accent)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <p style={{
+                      fontSize: 10, fontWeight: 600, letterSpacing: '0.14em',
+                      textTransform: 'uppercase', color: 'var(--text-muted)', margin: 0,
+                    }}>AI Comparative Analysis</p>
+                    <button onClick={() => { setNarrative(''); }}
+                      style={{ fontSize: 11, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      Regenerate
+                    </button>
+                  </div>
+                  <p style={{
+                    fontFamily: 'var(--font-display)', fontWeight: 400, fontSize: 15,
+                    color: 'var(--text-primary)', lineHeight: 1.7, margin: 0,
+                    letterSpacing: '-0.01em',
+                  }}>{narrative}</p>
+                </div>
               )}
             </div>
           )}
@@ -391,27 +581,17 @@ export default function Compare() {
                   ))}
                 </tr>
               </thead>
-              <tbody>
-                {TABLE_DIMS.map(({ key, label }, rowIdx) => {
-                  const vals  = enrichedDetails.map(c => Number(c[key] || 0))
-                  const max   = Math.max(...vals)
-                  const isTotal = rowIdx === TABLE_DIMS.length - 1
+                            <tbody>
+                {/* Score dimension rows */}
+                {DIMS.map(({ key, label }) => {
+                  const vals = enrichedDetails.map(c => Number(c[key] || 0))
+                  const max  = Math.max(...vals)
                   return (
                     <tr key={key}
-                      style={{
-                        borderBottom: isTotal ? 'none' : '1px solid var(--border-subtle)',
-                        transition: 'background 0.12s',
-                        background: isTotal ? 'var(--bg-elevated)' : 'transparent',
-                      }}
-                      onMouseEnter={e => { if (!isTotal) e.currentTarget.style.background = 'var(--bg-hover)' }}
-                      onMouseLeave={e => { if (!isTotal) e.currentTarget.style.background = 'transparent' }}>
-                      <td style={{
-                        padding: '13px 20px',
-                        fontWeight: isTotal ? 600 : 500,
-                        color: isTotal ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        fontFamily: isTotal ? 'var(--font-display)' : 'inherit',
-                        fontSize: isTotal ? 14 : 13,
-                      }}>
+                      style={{ borderBottom: '1px solid var(--border-subtle)', transition: 'background 0.12s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <td style={{ padding: '13px 20px', fontWeight: 500, color: 'var(--text-secondary)', fontSize: 13 }}>
                         {label}
                       </td>
                       {enrichedDetails.map((c, i) => {
@@ -420,20 +600,115 @@ export default function Compare() {
                         return (
                           <td key={c.candidate_id} style={{
                             padding: '13px 20px', textAlign: 'right',
-                            fontWeight: isMax ? 700 : 400,
-                            fontFamily: isTotal ? 'var(--font-display)' : 'inherit',
-                            fontSize: isTotal ? 15 : 13,
+                            fontWeight: isMax ? 700 : 400, fontSize: 13,
                             color: isMax ? COLORS[i].stroke : 'var(--text-muted)',
-                            background: isMax && !isTotal ? COLORS[i].bg : 'transparent',
+                            background: isMax ? COLORS[i].bg : 'transparent',
                           }}>
-                            {val > 0 ? val.toFixed(isTotal ? 1 : 0) : 'N/A'}
-                            {isMax && !isTotal && <span style={{ marginLeft: 4, fontSize: 9, opacity: 0.7 }}>▲</span>}
+                            {val > 0 ? val.toFixed(0) : 'N/A'}
+                            {isMax && <span style={{ marginLeft: 4, fontSize: 9, opacity: 0.7 }}>&#9650;</span>}
                           </td>
                         )
                       })}
                     </tr>
                   )
                 })}
+
+                {/* Topics & Network rows */}
+                {hasTopicData && (
+                  <>
+                    <tr style={{ background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td colSpan={1 + enrichedDetails.length} style={{
+                        padding: '7px 20px', fontSize: 10, fontWeight: 600,
+                        letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)',
+                      }}>Topics &amp; Network</td>
+                    </tr>
+                    {[
+                      {
+                        label: 'Dominant Topic',
+                        fn: c => c.research?.dominant_topic
+                          ? (c.research.dominant_topic.length > 20 ? c.research.dominant_topic.slice(0, 19) + '…' : c.research.dominant_topic)
+                          : null,
+                        isText: true,
+                      },
+                      {
+                        label: 'Topic Diversity',
+                        fn: c => c.research?.topic_diversity_score != null
+                          ? Math.round(c.research.topic_diversity_score * 100) : null,
+                        suffix: '%',
+                      },
+                      {
+                        label: 'Collab. Diversity',
+                        fn: c => c.research?.collaboration_diversity_score != null
+                          ? Math.round(c.research.collaboration_diversity_score * 100) : null,
+                        suffix: '%',
+                      },
+                      {
+                        label: 'Unique Co-authors',
+                        fn: c => c.research?.unique_coauthors ?? null,
+                      },
+                    ].map(({ label, fn, isText, suffix }) => {
+                      const vals   = enrichedDetails.map(c => fn(c))
+                      const nums   = vals.map(v => (typeof v === 'number' ? v : NaN))
+                      const maxNum = Math.max(...nums.filter(v => !isNaN(v)))
+                      return (
+                        <tr key={label}
+                          style={{ borderBottom: '1px solid var(--border-subtle)', transition: 'background 0.12s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <td style={{ padding: '12px 20px', fontWeight: 500, color: 'var(--text-secondary)', fontSize: 13 }}>
+                            {label}
+                          </td>
+                          {vals.map((val, i) => {
+                            const isMax = !isText && typeof val === 'number' && val === maxNum && maxNum > 0
+                            const display = val === null ? 'N/A' : isText ? val : val + (suffix || '')
+                            return (
+                              <td key={i} style={{
+                                padding: '12px 20px',
+                                textAlign: isText ? 'left' : 'right',
+                                fontWeight: isMax ? 700 : 400,
+                                fontSize: isText ? 11 : 13,
+                                color: isMax ? COLORS[i].stroke : 'var(--text-muted)',
+                                background: isMax ? COLORS[i].bg : 'transparent',
+                                whiteSpace: isText ? 'normal' : 'nowrap',
+                                wordBreak: isText ? 'break-word' : 'normal',
+                              }}>
+                                {display}
+                                {isMax && <span style={{ marginLeft: 4, fontSize: 9, opacity: 0.7 }}>&#9650;</span>}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
+                  </>
+                )}
+
+                {/* Total row */}
+                {(() => {
+                  const vals = enrichedDetails.map(c => Number(c.computed_score || 0))
+                  const max  = Math.max(...vals)
+                  return (
+                    <tr style={{ background: 'var(--bg-elevated)', borderBottom: 'none' }}>
+                      <td style={{ padding: '13px 20px', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', fontSize: 14 }}>
+                        Total
+                      </td>
+                      {enrichedDetails.map((c, i) => {
+                        const val   = Number(c.computed_score || 0)
+                        const isMax = val === max && max > 0
+                        return (
+                          <td key={c.candidate_id} style={{
+                            padding: '13px 20px', textAlign: 'right',
+                            fontWeight: isMax ? 700 : 400,
+                            fontFamily: 'var(--font-display)', fontSize: 15,
+                            color: isMax ? COLORS[i].stroke : 'var(--text-muted)',
+                          }}>
+                            {val > 0 ? val.toFixed(1) : 'N/A'}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })()}
               </tbody>
             </table>
           </div>
