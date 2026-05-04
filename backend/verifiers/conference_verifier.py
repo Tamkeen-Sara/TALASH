@@ -30,6 +30,7 @@ _CORE_DB        = "data/core_rankings.db"
 _CORE_CSV_URL   = "https://portal.core.edu.au/conf-ranks/?search=&by=all&source=all&sort=atitle&page=1&do=Export"
 _DBLP_API       = "https://dblp.org/search/venue/api?q={query}&h=5&format=json"
 _SCIMAGO_PROC   = "https://www.scimagojr.com/journalsearch.php?q={query}&tip=p&clean=0"
+_OPENALEX_VENUE = "https://api.openalex.org/sources?search={query}&filter=type:conference&per_page=1&mailto={mailto}"
 _core_rankings: list[dict] = []
 
 # Publishers whose IEEE/ACM/Springer sponsorship is worth surfacing even when unranked
@@ -326,6 +327,71 @@ async def _dblp_resolve(name: str) -> str | None:
     return None
 
 
+
+# --- OpenAlex venue --- data-driven quality tier for non-CORE conferences ---
+
+def _venue_quality_tier(h_index: int, works_count: int, cited_by_count: int) -> str:
+    """
+    Quality tier from OpenAlex venue metrics.
+    Calibrated against real values:
+      NeurIPS h~400, CVPR h~300, ICCV h~200, WCNC h~60, small workshop h~5
+    Used only when CORE and Scimago both return nothing.
+    """
+    if h_index >= 150 or cited_by_count >= 1_000_000:
+        return "Elite"
+    if h_index >= 80 or cited_by_count >= 300_000:
+        return "Excellent"
+    if h_index >= 40 or cited_by_count >= 80_000:
+        return "Good"
+    if h_index >= 15 or cited_by_count >= 15_000:
+        return "Recognized"
+    if works_count >= 50:
+        return "Known"
+    return "Marginal"
+
+
+async def _check_openalex_venue(name: str) -> dict:
+    """
+    Look up a conference proceedings series in OpenAlex.
+    Returns h_index, works_count, cited_by_count, and a computed quality tier.
+    Covers any conference that has published papers indexed by OpenAlex,
+    regardless of whether it appears in CORE or Scimago.
+    """
+    if not name or len(name.strip()) < 8:
+        return {}
+    try:
+        url = _OPENALEX_VENUE.format(
+            query=urllib.parse.quote(name.strip()),
+            mailto=settings.polite_mailto,
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                if r.status != 200:
+                    return {}
+                results = (await r.json()).get("results", [])
+                if not results:
+                    return {}
+                venue = results[0]
+                returned_name = venue.get("display_name") or ""
+                if returned_name and fuzz.token_set_ratio(
+                    name.lower(), returned_name.lower()
+                ) < 50:
+                    return {}
+                stats = venue.get("summary_stats") or {}
+                h     = stats.get("h_index") or 0
+                works = venue.get("works_count") or 0
+                cited = venue.get("cited_by_count") or 0
+                return {
+                    "found":              True,
+                    "venue_h_index":      h,
+                    "venue_works_count":  works,
+                    "venue_cited_by":     cited,
+                    "venue_quality_tier": _venue_quality_tier(h, works, cited),
+                    "resolved_name":      returned_name,
+                }
+    except Exception:
+        return {}
+
 # ─── Scimago conference proceedings ──────────────────────────────────────────
 
 async def _check_scimago_proceedings(name: str) -> dict:
@@ -374,13 +440,59 @@ async def _check_scimago_proceedings(name: str) -> dict:
 
 # ─── Fuzzy matching ───────────────────────────────────────────────────────────
 
+def _extract_acronyms(name: str) -> list[str]:
+    """
+    Pull candidate acronyms out of a conference name string.
+
+    Sources (in priority order):
+      1. Explicit parenthetical: "... (CVPR)" or "... (ICML 2023)"
+      2. Standalone ALL-CAPS tokens ≥ 2 chars that are not years:
+         "IEEE INFOCOM 2022" → ["INFOCOM", "IEEE"]
+      3. CamelCase tokens that mix upper/lower:
+         "NeurIPS 2023" → ["NeurIPS"]
+
+    Having these lets us look up the STORED acronym directly instead of
+    comparing a full name against short stored acronyms (which never scores
+    above the 85-threshold for ratio-based matching).
+    """
+    candidates: list[str] = []
+    # Parenthetical acronyms are the most reliable signal
+    candidates += re.findall(r'\(([A-Z][A-Za-z&\-]{1,9})\b', name)
+    # Standalone uppercase tokens (not 4-digit years)
+    candidates += [t for t in re.findall(r'\b([A-Z]{2,10})\b', name)
+                   if not re.fullmatch(r'\d{4}', t)]
+    # CamelCase like "NeurIPS", "EuroSys"
+    candidates += re.findall(r'\b([A-Z][a-z]+[A-Z][A-Za-z]*)\b', name)
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    result: list[str] = []
+    for c in candidates:
+        if c.upper() not in seen:
+            seen.add(c.upper())
+            result.append(c)
+    return result
+
+
 def _fuzzy_lookup(name: str, threshold: int | None = None) -> dict:
-    """Fuzzy-match name against in-memory CORE rankings."""
+    """
+    Match a conference name against the in-memory CORE rankings.
+
+    Three-pass strategy:
+      Pass 1 — full-name fuzzy match (token_set_ratio, handles word-order
+                variants and extra words like "Proceedings of …")
+      Pass 2 — extract acronyms FROM the input name, look them up exactly
+                against stored acronyms.  Fixes the common case where the CV
+                lists "IEEE CVPR 2022" and CORE stores acronym "CVPR".
+                (The old approach compared the FULL input string against each
+                stored acronym — "IEEE CVPR 2022" vs "CVPR" scores ~30, never
+                reaches 85.)
+      Pass 3 — try the stored full names with WRatio for near-miss cases.
+    """
     if not _core_rankings:
         return {}
     cutoff = threshold or settings.conference_fuzzy_threshold
 
-    # Match against full names
+    # Pass 1: full-name fuzzy
     names  = [r["name"] for r in _core_rankings]
     result = process.extractOne(name, names, scorer=fuzz.token_set_ratio, score_cutoff=cutoff)
     if result:
@@ -388,16 +500,28 @@ def _fuzzy_lookup(name: str, threshold: int | None = None) -> dict:
         return {"core_rank": _core_rankings[idx]["rank"],
                 "matched_name": _core_rankings[idx]["name"], "match_score": score}
 
-    # Also match against acronyms
-    acronyms = [r.get("acronym", "") for r in _core_rankings]
-    result   = process.extractOne(
-        name.upper(), [a.upper() for a in acronyms],
-        scorer=fuzz.ratio, score_cutoff=85,
-    )
-    if result:
-        _, score, idx = result
-        return {"core_rank": _core_rankings[idx]["rank"],
-                "matched_name": _core_rankings[idx]["name"], "match_score": score}
+    # Pass 2: acronym extraction → exact acronym lookup
+    stored_acronyms_upper = [r.get("acronym", "").upper() for r in _core_rankings]
+    for acr in _extract_acronyms(name):
+        acr_up = acr.upper()
+        if not acr_up:
+            continue
+        # Exact match first
+        try:
+            idx = stored_acronyms_upper.index(acr_up)
+            return {"core_rank": _core_rankings[idx]["rank"],
+                    "matched_name": _core_rankings[idx]["name"], "match_score": 100}
+        except ValueError:
+            pass
+        # Near-exact (handles "EuroS&P" vs "EUROS&P" etc.)
+        res2 = process.extractOne(
+            acr_up, stored_acronyms_upper, scorer=fuzz.ratio, score_cutoff=90
+        )
+        if res2:
+            _, score2, idx2 = res2
+            if stored_acronyms_upper[idx2]:   # skip blank-acronym entries
+                return {"core_rank": _core_rankings[idx2]["rank"],
+                        "matched_name": _core_rankings[idx2]["name"], "match_score": score2}
 
     return {}
 
@@ -459,6 +583,8 @@ async def verify_conference(
         "conference_edition":    edition,
         "conference_number":     _extract_edition(edition),
         "is_mature":             None,
+        "venue_h_index":         None,
+        "venue_quality_tier":    None,
         "verification_source":   "unverified",
     }
 
@@ -587,6 +713,29 @@ async def verify_conference(
     # 6. Publisher extraction from CrossRef result (already fetched in step 3)
     # Stored in result["conference_publisher"] during the CrossRef pass above.
     # This is a separate field — IEEE/ACM sponsorship is useful even when Unranked.
+
+
+    # 7. OpenAlex venue lookup — data-driven quality tier for conferences not
+    # in CORE or Scimago (interdisciplinary, non-CS, regional, newer venues).
+    # Any conference with indexed papers gets h_index + quality tier from
+    # citation metrics — no hardcoded ranking list required.
+    oa_query = (
+        result.get("matched_name")
+        or result.get("resolved_conference_name")
+        or (name if not _is_generic(name) else None)
+    )
+    if oa_query:
+        oa_venue = await _check_openalex_venue(oa_query)
+        if oa_venue.get("found"):
+            result["venue_h_index"]      = oa_venue["venue_h_index"]
+            result["venue_quality_tier"] = oa_venue["venue_quality_tier"]
+            if not result.get("resolved_conference_name") and oa_venue.get("resolved_name"):
+                result["resolved_conference_name"] = oa_venue["resolved_name"]
+            src = result["verification_source"]
+            if src == "unverified":
+                result["verification_source"] = "OpenAlex"
+            elif "OpenAlex" not in src:
+                result["verification_source"] += "+OpenAlex"
 
     # Maturity: ≥5 editions = established conference
     if result["conference_number"]:

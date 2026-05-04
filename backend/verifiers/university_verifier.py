@@ -282,23 +282,53 @@ def _load_qs_data():
 
 
 def _qs_lookup(canonical_name: str) -> dict:
-    """Fuzzy-match canonical name against QS data. Returns full QS entry dict."""
+    """
+    Match a canonical institution name against the QS dataset.
+
+    Two-gate approach eliminates false positives from shared generic tokens:
+      Gate 1 — WRatio ≥ threshold  (weighted combination of ratio strategies,
+                handles minor typos, word-order differences, extra tokens)
+      Gate 2 — fuzz.ratio ≥ 68     (Levenshtein similarity of the full strings,
+                order-sensitive; rejects cases where only generic words match)
+
+    Why Gate 2 is essential:
+      token_set_ratio("Institute of Space Technology",
+                      "Massachusetts Institute of Technology (MIT)") = 88
+        → false match: both share "Institute", "of", "Technology"
+      fuzz.ratio(same pair) ≈ 57
+        → correctly rejected by Gate 2
+
+    Threshold source: settings.university_fuzzy_threshold (default 80).
+    Raising to 80 (from the old 75) plus Gate 2 makes the matcher precise
+    enough for canonical names that already come from ROR (i.e. mostly correct).
+    """
     _load_qs_data()
     if not _qs_cache:
         return {}
+
     names  = list(_qs_cache.keys())
     result = process.extractOne(
         canonical_name, names,
-        scorer=fuzz.token_set_ratio,
-        score_cutoff=settings.university_fuzzy_threshold,
+        scorer=fuzz.WRatio,
+        score_cutoff=max(settings.university_fuzzy_threshold, 80),
     )
-    if result:
-        matched_name, score, _ = result
-        data = _qs_cache[matched_name]
-        print(f"[QS] '{canonical_name}' → '{matched_name}' (score={score}) rank={data.get('qs_rank')}")
-        return data
-    print(f"[QS] '{canonical_name}' → no match found")
-    return {}
+    if not result:
+        print(f"[QS] '{canonical_name}' → no match found")
+        return {}
+
+    matched_name, score, _ = result
+
+    # Gate 2: full-string Levenshtein must also be reasonable
+    direct_ratio = fuzz.ratio(canonical_name, matched_name)
+    if direct_ratio < 68:
+        print(f"[QS] '{canonical_name}' → rejected '{matched_name}' "
+              f"(WRatio={score:.1f} passed but ratio={direct_ratio:.1f} < 68 — likely false match)")
+        return {}
+
+    data = _qs_cache[matched_name]
+    print(f"[QS] '{canonical_name}' → '{matched_name}' "
+          f"(WRatio={score:.1f}, ratio={direct_ratio:.1f}) rank={data.get('qs_rank')}")
+    return data
 
 
 # ─── ROR API ──────────────────────────────────────────────────────────────────
@@ -320,62 +350,81 @@ def _clean_institution_name(name: str) -> str:
     return cleaned or name
 
 
+def _parse_ror_org(org: dict, score: float = 1.0) -> dict:
+    return {
+        "canonical_name": org.get("name"),
+        "country":        org.get("country", {}).get("country_name"),
+        "types":          org.get("types", []),
+        "ror_id":         org.get("id", "").replace("https://ror.org/", ""),
+        "confidence":     score,
+    }
+
+
 async def _ror_lookup(name: str) -> dict:
     """
-    Real-time institution name resolution via ROR.
-    Handles: aliases, campus suffixes, abbreviations, non-English names.
-    Returns canonical name + ROR ID.
+    Real-time institution resolution via ROR with three-strategy fallback:
+
+    Strategy 1 — affiliation endpoint (?affiliation=):
+      Designed for noisy affiliation strings from paper metadata.
+      Handles full names, campus variants, common misspellings.
+
+    Strategy 2 — full-text query endpoint (?query=):
+      Searches ROR's full corpus including acronyms, aliases, and
+      abbreviations stored per-institution (e.g. NUST, LUMS, KAIST).
+      Catches cases where the affiliation endpoint returns no result
+      because the input is a bare acronym with no surrounding context.
+
+    Strategy 3 — retry affiliation with original (un-cleaned) name:
+      Last resort when campus-suffix stripping removed too much context.
     """
-    # Try with cleaned name first, fall back to original if no result
     cleaned = _clean_institution_name(name)
     query   = cleaned if cleaned != name else name
-    try:
-        params = urllib.parse.urlencode({"affiliation": query})
-        url = f"{_ROR_API}?{params}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url,
-                timeout=aiohttp.ClientTimeout(total=7),
-                headers={"User-Agent": "TALASH/1.0 (academic-hiring; mailto:talash@seecs.edu.pk)"},
-            ) as r:
-                if r.status != 200:
-                    return {}
-                data = await r.json()
-                items = data.get("items", [])
-                if items:
-                    best = items[0]
-                    org  = best.get("organization", {})
-                    return {
-                        "canonical_name": org.get("name"),
-                        "country":        org.get("country", {}).get("country_name"),
-                        "types":          org.get("types", []),
-                        "ror_id":         org.get("id", "").replace("https://ror.org/", ""),
-                        "confidence":     best.get("score", 0),
-                    }
 
-                # No result with cleaned name — retry with original full name
-                if query != name:
-                    params2 = urllib.parse.urlencode({"affiliation": name})
-                    async with session.get(
-                        f"{_ROR_API}?{params2}",
-                        timeout=aiohttp.ClientTimeout(total=7),
-                        headers={"User-Agent": "TALASH/1.0 (academic-hiring)"},
-                    ) as r2:
-                        if r2.status == 200:
-                            data2  = await r2.json()
-                            items2 = data2.get("items", [])
-                            if items2:
-                                best = items2[0]
-                                org  = best.get("organization", {})
-                                return {
-                                    "canonical_name": org.get("name"),
-                                    "country":        org.get("country", {}).get("country_name"),
-                                    "types":          org.get("types", []),
-                                    "ror_id":         org.get("id", "").replace("https://ror.org/", ""),
-                                    "confidence":     best.get("score", 0),
-                                }
-    except Exception as e:
-        print(f"[university_verifier] ROR error for '{name}': {e}")
+    async with aiohttp.ClientSession() as session:
+        headers = {"User-Agent": "TALASH/1.0 (academic-hiring; mailto:talash@seecs.edu.pk)"}
+        timeout = aiohttp.ClientTimeout(total=7)
+
+        # ── Strategy 1: affiliation endpoint (cleaned name) ──────────────────
+        try:
+            url = f"{_ROR_API}?{urllib.parse.urlencode({'affiliation': query})}"
+            async with session.get(url, timeout=timeout, headers=headers) as r:
+                if r.status == 200:
+                    items = (await r.json()).get("items", [])
+                    if items:
+                        best = items[0]
+                        return _parse_ror_org(best.get("organization", {}), best.get("score", 0))
+        except Exception as e:
+            print(f"[ROR] affiliation lookup error for '{query}': {e}")
+
+        # ── Strategy 2: full-text query (searches acronyms/aliases in ROR) ───
+        # This resolves bare abbreviations like NUST, LUMS, PIEAS that ROR
+        # stores as official acronyms in its institution records.
+        try:
+            url2 = f"{_ROR_API}?{urllib.parse.urlencode({'query': query, 'page': '1'})}"
+            async with session.get(url2, timeout=timeout, headers=headers) as r2:
+                if r2.status == 200:
+                    items2 = (await r2.json()).get("items", [])
+                    if items2:
+                        # ROR full-text returns items directly (not scored like affiliation)
+                        org2 = items2[0]
+                        if isinstance(org2, dict) and org2.get("name"):
+                            return _parse_ror_org(org2)
+        except Exception as e:
+            print(f"[ROR] query lookup error for '{query}': {e}")
+
+        # ── Strategy 3: affiliation with original (un-cleaned) name ──────────
+        if query != name:
+            try:
+                url3 = f"{_ROR_API}?{urllib.parse.urlencode({'affiliation': name})}"
+                async with session.get(url3, timeout=timeout, headers=headers) as r3:
+                    if r3.status == 200:
+                        items3 = (await r3.json()).get("items", [])
+                        if items3:
+                            best3 = items3[0]
+                            return _parse_ror_org(best3.get("organization", {}), best3.get("score", 0))
+            except Exception as e:
+                print(f"[ROR] fallback affiliation error for '{name}': {e}")
+
     return {}
 
 

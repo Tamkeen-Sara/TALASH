@@ -197,7 +197,16 @@ async def _check_scimago(session: aiohttp.ClientSession, issn: str | None, title
 # ─── Semantic Scholar ─────────────────────────────────────────────────────────
 
 async def _check_semantic_scholar(session: aiohttp.ClientSession, paper_title: str) -> dict:
-    """Per-paper citation count (NOT journal-level)."""
+    """
+    Per-paper citation count (NOT journal-level).
+
+    Validates that the returned paper is actually the queried one before
+    trusting its citation count.  The S2 search API returns the top-1 result
+    by relevance — without validation, papers with similar titles (or generic
+    titles like "Deep Learning") silently return counts for the wrong paper.
+    Threshold 75 is strict enough to reject clearly different papers while
+    accepting minor OCR/formatting variants in extracted titles.
+    """
     try:
         url = SEMANTIC_PAPER_URL.format(
             query=urllib.parse.quote(paper_title[:120])
@@ -210,7 +219,13 @@ async def _check_semantic_scholar(session: aiohttp.ClientSession, paper_title: s
                 papers = (await r.json()).get("data", [])
                 if papers:
                     p = papers[0]
-                    # S2 returns venue as a string and journal as {"name": "...", "volume": ...}
+                    returned_title = (p.get("title") or "").strip()
+                    if returned_title:
+                        similarity = fuzz.token_set_ratio(
+                            paper_title.lower(), returned_title.lower()
+                        )
+                        if similarity < 75:
+                            return {"found": False}   # wrong paper — discard
                     venue = (
                         (p.get("journal") or {}).get("name")
                         or p.get("venue")
@@ -277,7 +292,10 @@ async def _resolve_from_paper_title(session: aiohttp.ClientSession, paper_title:
     if len(query) < 15:
         return {"found": False}
 
-    # ── CrossRef /works — widest academic coverage, returns ISSN directly ─────
+    crossref_result: dict = {}
+    openalex_result: dict = {}
+
+    # ── CrossRef /works — widest DOI coverage, best for ISSN resolution ───────
     try:
         url = CROSSREF_WORKS_URL.format(query=urllib.parse.quote(query))
         async with session.get(
@@ -287,24 +305,26 @@ async def _resolve_from_paper_title(session: aiohttp.ClientSession, paper_title:
             if r.status == 200:
                 items = (await r.json()).get("message", {}).get("items", [])
                 if items:
-                    item = items[0]
+                    item     = items[0]
                     returned = (item.get("title") or [""])[0]
                     if fuzz.token_set_ratio(query.lower(), returned.lower()) >= 55:
-                        journal  = (item.get("container-title") or [""])[0].strip()
-                        issns    = item.get("ISSN") or []
-                        cite_cnt = item.get("is-referenced-by-count")
+                        journal = (item.get("container-title") or [""])[0].strip()
+                        issns   = item.get("ISSN") or []
                         if journal:
-                            return {
-                                "found":          True,
-                                "source":         "CrossRef",
-                                "journal_name":   journal,
-                                "issn":           issns[0] if issns else None,
-                                "citation_count": cite_cnt,   # CrossRef citation count
+                            crossref_result = {
+                                "found":        True,
+                                "source":       "CrossRef",
+                                "journal_name": journal,
+                                "issn":         issns[0] if issns else None,
+                                # is-referenced-by-count is DOI-citation-only.
+                                # We keep it as fallback but prefer OpenAlex below.
+                                "citation_count_cr": item.get("is-referenced-by-count"),
                             }
     except Exception:
         pass
 
-    # ── OpenAlex /works — good for recent open-access papers ──────────────────
+    # ── OpenAlex /works — broader citation coverage (merges CrossRef + PubMed +
+    #    arXiv + MAG), preferred source for citation counts ─────────────────────
     try:
         url = OPENALEX_WORKS_URL.format(
             query=urllib.parse.quote(query),
@@ -321,19 +341,27 @@ async def _resolve_from_paper_title(session: aiohttp.ClientSession, paper_title:
                         journal = source.get("display_name")
                         issn_l  = source.get("issn_l")
                         issns   = source.get("issn") or []
-                        # cited_by_count from OpenAlex is broader than CrossRef
-                        # (includes non-DOI citations, covers more venues)
-                        cite_cnt = work.get("cited_by_count")
                         if journal:
-                            return {
+                            openalex_result = {
                                 "found":          True,
                                 "source":         "OpenAlex",
                                 "journal_name":   journal,
                                 "issn":           issn_l or (issns[0] if issns else None),
-                                "citation_count": cite_cnt,
+                                "citation_count": work.get("cited_by_count"),
                             }
     except Exception:
         pass
+
+    # Merge: prefer OpenAlex (broader citation count), CrossRef for ISSN fallback
+    if openalex_result.get("found"):
+        if crossref_result.get("found") and not openalex_result.get("issn"):
+            openalex_result["issn"] = crossref_result.get("issn")
+        return openalex_result
+
+    if crossref_result.get("found"):
+        # Use CrossRef's DOI-only count only when OpenAlex is unavailable
+        crossref_result["citation_count"] = crossref_result.pop("citation_count_cr", None)
+        return crossref_result
 
     return {"found": False}
 
