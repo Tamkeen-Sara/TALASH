@@ -27,6 +27,9 @@ export const getMissingInfoEmail = (id) =>
 export const deleteCandidate = (id) =>
   api.delete(`/candidates/${id}`)
 
+export const getCompareNarrative = (ids) =>
+  api.post('/compare/narrative', { ids }, { timeout: 60000 })
+
 // Parse SSE events from an XHR stream without duplicates.
 // SSE events are separated by \n\n, so split on that boundary
 // and keep incomplete trailing event in a buffer for the next tick.

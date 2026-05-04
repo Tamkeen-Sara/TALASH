@@ -3,7 +3,7 @@ import { AuthContext } from './AuthContextObject'
 
 // Demo credentials for local development and demos.
 const DEMO_USERS = [
-  { email: 'admin@talash.ai',   password: 'talash12345', name: 'Admin User',   role: 'Hiring Manager', initials: 'AU', picture: null },
+  { email: 'admin@talash.ai',   password: 'talash12345', name: 'Admin User',   role: 'Administrator',  initials: 'AU', picture: null },
   { email: 'tamkeen@talash.ai', password: 'talash12345', name: 'Tamkeen Sara', role: 'Recruiter',      initials: 'TS', picture: null },
   { email: 'furqan@talash.ai',  password: 'talash12345', name: 'Furqan Raza',  role: 'Analyst',        initials: 'FR', picture: null },
 ]
@@ -13,8 +13,18 @@ function persist(user) {
 }
 
 function initUser() {
-  try { return JSON.parse(localStorage.getItem('talash_user')) || null }
-  catch { return null }
+  try {
+    const stored = JSON.parse(localStorage.getItem('talash_user'))
+    if (!stored) return null
+    // Re-sync role from DEMO_USERS so stale localStorage never shows a wrong role
+    const canonical = DEMO_USERS.find(u => u.email === stored.email)
+    if (canonical) {
+      const { password: _, ...safe } = canonical
+      persist(safe)
+      return safe
+    }
+    return stored
+  } catch { return null }
 }
 
 export function AuthProvider({ children }) {
