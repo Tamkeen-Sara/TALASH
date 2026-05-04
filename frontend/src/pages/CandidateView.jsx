@@ -10,6 +10,8 @@ import EducationTab from '../components/EducationTab'
 import ResearchTab from '../components/ResearchTab'
 import EmploymentTab from '../components/EmploymentTab'
 import SkillsTab from '../components/SkillsTab'
+import TopicTab from '../components/TopicTab'
+import CoauthorTab from '../components/CoauthorTab'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 function downloadBlob(blob, filename) {
@@ -77,7 +79,7 @@ function SupervisionForm({ candidateId, onAdded }) {
   )
 }
 
-const TABS = ['overview', 'education', 'research', 'employment', 'skills', 'supervision', 'raw data']
+const TABS = ['overview', 'education', 'research', 'topics & network', 'employment', 'skills', 'supervision', 'interview', 'raw data']
 
 const REC = {
   Strong:      { bg: 'rgba(74,222,128,0.1)',   color: 'var(--success)', border: 'rgba(74,222,128,0.22)'   },
@@ -256,12 +258,69 @@ export default function CandidateView() {
                 fontSize: 13, color: 'var(--text-secondary)', marginTop: 8,
                 fontFamily: 'var(--font-display)', fontStyle: 'italic',
               }}>
-                {candidate.email || 'No email on file'}
+                {candidate.email || candidate.enriched_email || 'No email on file'}
+                {candidate.enriched_email && !candidate.email && (
+                  <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--text-muted)', fontStyle: 'normal' }}>
+                    via ORCID
+                  </span>
+                )}
                 {candidate.cv_filename && (
                   <span style={{ marginLeft: 12, fontFamily: 'var(--font-mono, monospace)', fontSize: 11,
                     color: 'var(--text-muted)', fontStyle: 'normal' }}>{candidate.cv_filename}</span>
                 )}
               </p>
+
+              {/* Academic profile links */}
+              {(candidate.orcid_profile_url || candidate.openalex_profile_url || candidate.semantic_scholar_id) && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                  {candidate.orcid_profile_url && (
+                    <a href={candidate.orcid_profile_url} target="_blank" rel="noopener noreferrer" style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                      textDecoration: 'none', fontStyle: 'normal',
+                      background: 'rgba(166,220,66,0.1)', color: '#a6dc42',
+                      border: '1px solid rgba(166,220,66,0.25)',
+                      transition: 'background 0.14s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(166,220,66,0.18)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(166,220,66,0.1)'}>
+                      ORCID {candidate.orcid_id}
+                    </a>
+                  )}
+                  {candidate.openalex_profile_url && (
+                    <a href={candidate.openalex_profile_url} target="_blank" rel="noopener noreferrer" style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                      textDecoration: 'none', fontStyle: 'normal',
+                      background: 'rgba(56,189,248,0.1)', color: 'var(--sky)',
+                      border: '1px solid rgba(56,189,248,0.25)',
+                      transition: 'background 0.14s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(56,189,248,0.18)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(56,189,248,0.1)'}>
+                      OpenAlex
+                      {candidate.enriched_h_index != null && (
+                        <span style={{ opacity: 0.7 }}>· h{candidate.enriched_h_index}</span>
+                      )}
+                    </a>
+                  )}
+                  {candidate.semantic_scholar_id && (
+                    <a href={`https://www.semanticscholar.org/author/${candidate.semantic_scholar_id}`}
+                      target="_blank" rel="noopener noreferrer" style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                      textDecoration: 'none', fontStyle: 'normal',
+                      background: 'rgba(149,128,255,0.1)', color: 'var(--violet)',
+                      border: '1px solid rgba(149,128,255,0.25)',
+                      transition: 'background 0.14s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(149,128,255,0.18)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(149,128,255,0.1)'}>
+                      Semantic Scholar
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           {/* Composite score donut-style display */}
@@ -392,6 +451,40 @@ export default function CandidateView() {
                 </p>
               </div>
             )}
+            {/* CV Quality Score */}
+            {candidate.cv_quality_score != null && (
+              <div className="card" style={{ padding: '18px 22px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    CV Quality Score
+                  </h3>
+                  <span style={{
+                    fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 400,
+                    color: candidate.cv_quality_score >= 75 ? 'var(--success)' : candidate.cv_quality_score >= 50 ? 'var(--warning)' : 'var(--error)',
+                  }}>{candidate.cv_quality_score}</span>
+                </div>
+                <div style={{ height: 5, background: 'var(--bg-elevated)', borderRadius: 9999, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${candidate.cv_quality_score}%`, borderRadius: 9999, transition: 'width 0.4s',
+                    background: candidate.cv_quality_score >= 75 ? 'var(--success)' : candidate.cv_quality_score >= 50 ? 'var(--warning)' : 'var(--error)',
+                  }} />
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                  Completeness · Verifiability · Integrity
+                </p>
+              </div>
+            )}
+
+            {/* Research Trajectory */}
+            {candidate.research_trajectory && (
+              <div className="card" style={{ padding: '18px 22px', border: '1px solid rgba(149,128,255,0.18)' }}>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--violet)', marginBottom: 10 }}>
+                  Research Trajectory
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                  {candidate.research_trajectory}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -407,6 +500,17 @@ export default function CandidateView() {
       )}
 
       {/* â•â•â•â• EMPLOYMENT â•â•â•â• */}
+
+      {/* TOPICS & NETWORK */}
+      {tab === 'topics & network' && (
+        <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          <TopicTab candidate={candidate} />
+          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 28 }}>
+            <CoauthorTab candidate={candidate} />
+          </div>
+        </div>
+      )}
+
       {tab === 'employment' && (
         <div className="fade-up">
           <EmploymentTab candidate={candidate} />
@@ -458,6 +562,49 @@ export default function CandidateView() {
             )}
           </div>
           <SupervisionForm candidateId={id} onAdded={fetchCandidate} />
+        </div>
+      )}
+
+
+      {/* INTERVIEW QUESTIONS */}
+      {tab === 'interview' && (
+        <div className="fade-up">
+          {candidate.interview_questions?.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {['strength', 'gap', 'future'].map(cat => {
+                const catQ = candidate.interview_questions.filter(q => q.category === cat)
+                if (!catQ.length) return null
+                const meta = {
+                  strength: { label: 'Strengths', color: 'var(--success)', border: 'rgba(74,222,128,0.2)' },
+                  gap:      { label: 'Gaps & Concerns', color: 'var(--error)', border: 'rgba(251,113,133,0.2)' },
+                  future:   { label: 'Future Direction', color: 'var(--violet)', border: 'rgba(149,128,255,0.2)' },
+                }[cat]
+                return (
+                  <div key={cat} className="card" style={{ padding: 0, overflow: 'hidden', border: `1px solid ${meta.border}` }}>
+                    <div style={{ padding: '12px 22px', borderBottom: `1px solid ${meta.border}` }}>
+                      <h3 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: meta.color, margin: 0 }}>
+                        {meta.label}
+                      </h3>
+                    </div>
+                    {catQ.map((q, i) => (
+                      <div key={i} style={{ padding: '16px 22px', borderBottom: i < catQ.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 6 }}>
+                          {i + 1}. {q.question}
+                        </p>
+                        <p style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, fontStyle: 'italic' }}>
+                          {q.rationale}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: 13, padding: '40px 0', textAlign: 'center' }}>
+              Interview questions were not generated for this candidate.
+            </p>
+          )}
         </div>
       )}
 

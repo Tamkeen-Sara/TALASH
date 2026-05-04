@@ -28,22 +28,47 @@ function QualityBadge({ paper }) {
   )
 }
 
-function CoreBadge({ rank }) {
-  if (!rank) return <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>Unranked</span>
-  const map = {
-    'A*': ['rgba(168,85,247,0.12)',  '#a855f7',       'rgba(168,85,247,0.3)'],
-    'A':  ['rgba(56,189,248,0.12)',  'var(--sky)',     'rgba(56,189,248,0.3)'],
-    'B':  ['rgba(251,191,36,0.12)',  'var(--warning)', 'rgba(251,191,36,0.3)'],
-    'C':  ['var(--bg-elevated)',      'var(--text-muted)', 'var(--border-subtle)'],
+function CoreBadge({ rank, paper }) {
+  if (rank) {
+    const map = {
+      'A*': ['rgba(168,85,247,0.12)',  '#a855f7',        'rgba(168,85,247,0.3)'],
+      'A':  ['rgba(56,189,248,0.12)',  'var(--sky)',      'rgba(56,189,248,0.3)'],
+      'B':  ['rgba(251,191,36,0.12)',  'var(--warning)',  'rgba(251,191,36,0.3)'],
+      'C':  ['var(--bg-elevated)',     'var(--text-muted)', 'var(--border-subtle)'],
+    }
+    const [bg, color, border] = map[rank] || ['var(--bg-elevated)', 'var(--text-muted)', 'var(--border-subtle)']
+    return (
+      <span style={{
+        padding: '2px 8px', borderRadius: 9999, fontSize: 10, fontWeight: 700,
+        whiteSpace: 'nowrap', display: 'inline-block',
+        background: bg, color, border: `1px solid ${border}`,
+      }}>CORE {rank}</span>
+    )
   }
-  const [bg, color, border] = map[rank] || ['var(--bg-elevated)', 'var(--text-muted)', 'var(--border-subtle)']
-  return (
-    <span style={{
-      padding: '2px 8px', borderRadius: 9999, fontSize: 10, fontWeight: 700,
-      whiteSpace: 'nowrap', display: 'inline-block',
-      background: bg, color, border: `1px solid ${border}`,
-    }}>CORE {rank}</span>
-  )
+
+  // No CORE rank — show OpenAlex venue quality tier if available
+  const tier = paper?.venue_quality_tier
+  if (tier) {
+    const tierMap = {
+      'Elite':      ['rgba(168,85,247,0.1)', '#a855f7',        'rgba(168,85,247,0.25)'],
+      'Excellent':  ['rgba(56,189,248,0.1)', 'var(--sky)',      'rgba(56,189,248,0.25)'],
+      'Good':       ['rgba(74,222,128,0.1)', 'var(--success)',  'rgba(74,222,128,0.25)'],
+      'Recognized': ['rgba(251,191,36,0.1)', 'var(--warning)',  'rgba(251,191,36,0.25)'],
+      'Known':      ['var(--bg-elevated)',   'var(--text-muted)', 'var(--border-subtle)'],
+      'Marginal':   ['var(--bg-elevated)',   'var(--text-muted)', 'var(--border-subtle)'],
+    }
+    const [bg, color, border] = tierMap[tier] || ['var(--bg-elevated)', 'var(--text-muted)', 'var(--border-subtle)']
+    const hLabel = paper.venue_h_index ? ` · h${paper.venue_h_index}` : ''
+    return (
+      <span title="Source: OpenAlex venue metrics — not a CORE/Scimago ranking" style={{
+        padding: '2px 8px', borderRadius: 9999, fontSize: 10, fontWeight: 700,
+        whiteSpace: 'nowrap', display: 'inline-block',
+        background: bg, color, border: `1px solid ${border}`,
+      }}>{tier}{hLabel}</span>
+    )
+  }
+
+  return <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>Unranked</span>
 }
 
 function ScoreBreakdown({ breakdown }) {
@@ -315,11 +340,8 @@ export default function ResearchTab({ candidate }) {
                     <td style={{ padding: '12px 16px', color: 'var(--text-muted)' }}>{p.year ?? 'N/A'}</td>
                     <td style={{ padding: '12px 16px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                        {/* CORE rank — primary signal */}
-                        {p.core_rank
-                          ? <CoreBadge rank={p.core_rank} />
-                          : <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>Unranked</span>
-                        }
+                        {/* CORE rank — primary; OpenAlex venue tier — fallback */}
+                        <CoreBadge rank={p.core_rank} paper={p} />
                         {/* Scimago proceedings quartile — secondary signal */}
                         {p.scimago_quartile && (() => {
                           const qMap = {
