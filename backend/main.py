@@ -1,4 +1,4 @@
-﻿"""TALASH FastAPI entry point.
+"""TALASH FastAPI entry point.
 
 Endpoints:
     GET  /health                  - Health check
@@ -28,7 +28,17 @@ from backend.agents.employment_agent import run as run_employment_agent
 from backend.agents.books_patents_agent import run as run_books_patents_agent
 from backend.agents.supervision_agent import run as run_supervision_agent
 from backend.agents.skill_agent import run as run_skill_agent
-from backend.reports.email_drafter import draft_missing_info_email, generate_candidate_summary
+from backend.agents.topic_agent import run as run_topic_agent
+from backend.agents.coauthor_agent import run as run_coauthor_agent
+from backend.agents.profile_enricher import run as run_profile_enricher
+from backend.reports.email_drafter import (
+    draft_missing_info_email,
+    generate_candidate_summary,
+    generate_interview_questions,
+    generate_research_trajectory,
+    compute_cv_quality_score,
+    generate_comparison_narrative,
+)
 from backend.scoring.rubric import compute_total_score
 from backend.verifiers.university_verifier import scrape_and_store_rankings, clear_process_cache
 from backend.verifiers.conference_verifier import load_core_rankings
@@ -165,6 +175,25 @@ async def upload_cvs(files: list[UploadFile] = File(...), jd: str = Form("")):
                 profile.score_research  = profile.research.research_score
                 yield f"data: {json.dumps({'status': 'research_scored', 'candidate': profile.full_name, 'score': profile.score_research})}\n\n"
 
+                # Step 4b: Topic variability analysis (non-fatal)
+                try:
+                    profile.research = await run_topic_agent(profile.research)
+                except Exception as e:
+                    print(f"[topic_agent] Failed for {profile.full_name}: {e}")
+
+                # Step 4c: Co-author analysis (non-fatal)
+                try:
+                    profile.research = await run_coauthor_agent(profile.research, profile.full_name)
+                except Exception as e:
+                    print(f"[coauthor_agent] Failed for {profile.full_name}: {e}")
+
+                # Step 4d: Academic profile enrichment (ORCID / OpenAlex / Semantic Scholar)
+                try:
+                    profile = await run_profile_enricher(profile)
+                except Exception as e:
+                    print(f"[profile_enricher] Failed for {profile.full_name}: {e}")
+
+
                 # Step 5: Employment agent (overlap detection, career progression, employment score)
                 profile.employment       = await run_employment_agent(profile.employment, profile.education)
                 profile.score_employment = profile.employment.employment_score
@@ -205,6 +234,19 @@ async def upload_cvs(files: list[UploadFile] = File(...), jd: str = Form("")):
                     profile.score_justification = summary["justification"]
                 except Exception as e:
                     print(f"[candidate_summary] Failed for {profile.full_name}: {e}")
+
+                # Step 10: Novel features — interview questions, trajectory, quality score
+                try:
+                    profile.interview_questions = await generate_interview_questions(profile)
+                except Exception as e:
+                    print(f"[interview_questions] Failed for {profile.full_name}: {e}")
+
+                try:
+                    profile.research_trajectory = await generate_research_trajectory(profile)
+                except Exception as e:
+                    print(f"[research_trajectory] Failed for {profile.full_name}: {e}")
+
+                profile.cv_quality_score = compute_cv_quality_score(profile)
 
                 _candidates[profile.candidate_id] = profile
                 _save_store()
@@ -254,6 +296,23 @@ async def upload_bulk_pdf(file: UploadFile = File(...), jd: str = Form("")):
                 profile.score_research  = profile.research.research_score
                 yield f"data: {json.dumps({'status': 'research_scored', 'candidate': profile.full_name, 'score': profile.score_research})}\n\n"
 
+                try:
+                    profile.research = await run_topic_agent(profile.research)
+                except Exception as e:
+                    print(f"[topic_agent] Failed for {profile.full_name}: {e}")
+
+                try:
+                    profile.research = await run_coauthor_agent(profile.research, profile.full_name)
+                except Exception as e:
+                    print(f"[coauthor_agent] Failed for {profile.full_name}: {e}")
+
+                # Step 4d: Academic profile enrichment (ORCID / OpenAlex / Semantic Scholar)
+                try:
+                    profile = await run_profile_enricher(profile)
+                except Exception as e:
+                    print(f"[profile_enricher] Failed for {profile.full_name}: {e}")
+
+
                 profile.employment       = await run_employment_agent(profile.employment, profile.education)
                 profile.score_employment = profile.employment.employment_score
                 yield f"data: {json.dumps({'status': 'employment_scored', 'candidate': profile.full_name, 'score': profile.score_employment})}\n\n"
@@ -288,6 +347,19 @@ async def upload_bulk_pdf(file: UploadFile = File(...), jd: str = Form("")):
                     profile.score_justification = summary["justification"]
                 except Exception as e:
                     print(f"[candidate_summary] Failed for {profile.full_name}: {e}")
+
+                # Step 10: Novel features — interview questions, trajectory, quality score
+                try:
+                    profile.interview_questions = await generate_interview_questions(profile)
+                except Exception as e:
+                    print(f"[interview_questions] Failed for {profile.full_name}: {e}")
+
+                try:
+                    profile.research_trajectory = await generate_research_trajectory(profile)
+                except Exception as e:
+                    print(f"[research_trajectory] Failed for {profile.full_name}: {e}")
+
+                profile.cv_quality_score = compute_cv_quality_score(profile)
 
                 _candidates[profile.candidate_id] = profile
                 _save_store()
@@ -483,5 +555,18 @@ async def get_report(candidate_id: str):
         headers={"Content-Disposition": f"attachment; filename={c.full_name}_report.pdf"}
     )
 
-
+@app.post("/api/compare/narrative")
+async def compare_narrative(body: dict):
+    """
+    Generate a Groq-powered comparative narrative for 2-4 candidates.
+    Body: {"ids": ["id1", "id2", ...]}
+    """
+    ids = body.get("ids", [])
+    if len(ids) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 candidate IDs required")
+    candidates = [_candidates[cid] for cid in ids if cid in _candidates]
+    if len(candidates) < 2:
+        raise HTTPException(status_code=404, detail="Not enough candidates found")
+    narrative = await generate_comparison_narrative(candidates)
+    return {"narrative": narrative}
 
