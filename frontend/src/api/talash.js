@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: (import.meta.env.VITE_API_URL || '') + '/api',
   timeout: 30000,
 })
 
@@ -59,7 +59,7 @@ export const uploadCVs = (files, jd, onEvent) => {
   formData.append('jd', jd || '')
 
   const xhr = new XMLHttpRequest()
-  xhr.open('POST', '/api/upload')
+  xhr.open('POST', (import.meta.env.VITE_API_URL || '') + '/api/upload')
   const parse = makeSseParser(onEvent)
   xhr.onprogress = () => parse(xhr.responseText)
   xhr.send(formData)
@@ -74,7 +74,7 @@ export const uploadBulkPDF = (file, jd, onEvent) => {
   formData.append('jd', jd || '')
 
   const xhr = new XMLHttpRequest()
-  xhr.open('POST', '/api/upload/bulk')
+  xhr.open('POST', (import.meta.env.VITE_API_URL || '') + '/api/upload/bulk')
   const parse = makeSseParser(onEvent)
   xhr.onprogress = () => parse(xhr.responseText)
   xhr.send(formData)

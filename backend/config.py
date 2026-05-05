@@ -3,6 +3,8 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
+    # for deploying
+    frontend_url: str = "http://localhost:5173"
     # API Keys — add multiple Groq keys (different accounts) separated by commas
     # e.g. GROQ_API_KEYS=key1,key2,key3
     # Falls back to GROQ_API_KEY if GROQ_API_KEYS is not set

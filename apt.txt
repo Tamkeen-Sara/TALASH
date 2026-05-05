@@ -1,0 +1,4 @@
+tesseract-ocr
+poppler-utils
+libpoppler-cpp-dev
+libgl1
