@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# force rebuild v2
+# force rebuild v3
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     poppler-utils \
@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 COPY requirements.txt .
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install -r requirements.txt
 COPY . .
 
