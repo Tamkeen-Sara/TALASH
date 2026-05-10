@@ -9,6 +9,7 @@ Module 2: Research Profile Analysis
 import asyncio
 from backend.schemas.research import ResearchProfile, JournalPaper, ConferencePaper
 from backend.verifiers.journal_verifier import verify_journal
+from backend.config import settings
 from backend.verifiers.conference_verifier import verify_conference
 
 
@@ -118,8 +119,13 @@ def score_research(profile: ResearchProfile) -> tuple[float, dict]:
     """
     q1   = [p for p in profile.journal_papers if p.wos_quartile == "Q1" and not p.is_predatory_flag]
     q2   = [p for p in profile.journal_papers if p.wos_quartile == "Q2" and not p.is_predatory_flag]
-    q3   = [p for p in profile.journal_papers if p.wos_quartile == "Q3" and not p.is_predatory_flag
-            and (p.is_scopus_indexed or p.is_wos_indexed)]   # Q3 only counts if actually indexed
+    # Q3 handling is optional: by default require indexing evidence (Scopus/WoS).
+    if settings.research_q3_require_indexed:
+        q3 = [p for p in profile.journal_papers
+              if p.wos_quartile == "Q3" and not p.is_predatory_flag
+              and (p.is_scopus_indexed or p.is_wos_indexed)]
+    else:
+        q3 = [p for p in profile.journal_papers if p.wos_quartile == "Q3" and not p.is_predatory_flag]
     pred = [p for p in profile.journal_papers if p.is_predatory_flag]
 
     top_conf  = [p for p in profile.conference_papers if _conf_tier(p) == "top"]

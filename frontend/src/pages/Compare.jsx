@@ -11,8 +11,8 @@ import usePageTitle from '../hooks/usePageTitle'
 import useCandidateStore from '../store/candidateStore'
 
 const DIMS = [
-  { key: 'score_research',    label: 'Research'    },
-  { key: 'score_education',   label: 'Education'   },
+  { key: 'score_research', label: 'Research' },
+  { key: 'score_education', label: 'Education' },
   { key: 'score_employment',  label: 'Employment'  },
   { key: 'score_skills',      label: 'Skills'      },
   { key: 'score_supervision', label: 'Supervision' },
@@ -52,16 +52,27 @@ export default function Compare() {
   const { candidates: storeCandidates, weights } = useCandidateStore()
 
   useEffect(() => {
-    getCandidates().then(r => setAllCandidates(r.data))
-    const ids = searchParams.get('ids')?.split(',').filter(Boolean) || []
-    if (ids.length) setSelected(ids.slice(0, 4))
+    async function init() {
+      const r = await getCandidates()
+      setAllCandidates(r.data)
+      const ids = searchParams.get('ids')?.split(',').filter(Boolean) || []
+      if (ids.length) setSelected(ids.slice(0, 4))
+    }
+    init()
   }, [])
 
   useEffect(() => {
     if (!selected.length) { setDetails([]); return }
-    setLoading(true)
-    Promise.all(selected.map(id => getCandidate(id).then(r => r.data)))
-      .then(setDetails).finally(() => setLoading(false))
+    async function fetchDetails() {
+      setLoading(true)
+      try {
+        const results = await Promise.all(selected.map(id => getCandidate(id).then(r => r.data)))
+        setDetails(results)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchDetails()
   }, [selected])
 
   // Enrich each detail with computed_score from the store (respects weight sliders)
@@ -142,7 +153,7 @@ export default function Compare() {
     const journals = c.research?.journal_papers || []
     const confs    = c.research?.conference_papers || []
     return {
-      name:       c.full_name?.split(' ')[0] || `C${i + 1}`,
+      name:       c.full_name || `C${i + 1}`,
       'Q1':       journals.filter(p => p.wos_quartile === 'Q1' && !p.is_predatory_flag).length,
       'Q2':       journals.filter(p => p.wos_quartile === 'Q2' && !p.is_predatory_flag).length,
       'Q3':       journals.filter(p => p.wos_quartile === 'Q3' && !p.is_predatory_flag).length,
@@ -312,7 +323,7 @@ export default function Compare() {
                   cursor={{ fill: 'var(--bg-elevated)' }}
                 />
                 {enrichedDetails.map((c, i) => (
-                  <Bar key={c.candidate_id} dataKey={`s${i}`} name={c.full_name?.split(' ')[0]} fill={COLORS[i].stroke} radius={[3, 3, 0, 0]} maxBarSize={32} />
+                  <Bar key={c.candidate_id} dataKey={`s${i}`} name={c.full_name} fill={COLORS[i].stroke} radius={[3, 3, 0, 0]} maxBarSize={32} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -337,7 +348,7 @@ export default function Compare() {
                     cursor={{ fill: 'var(--bg-elevated)' }}
                   />
                   {enrichedDetails.map((c, i) => (
-                    <Bar key={c.candidate_id} dataKey={`s${i}`} name={c.full_name?.split(' ')[0]} fill={COLORS[i].stroke} radius={[0, 3, 3, 0]} maxBarSize={14} />
+                    <Bar key={c.candidate_id} dataKey={`s${i}`} name={c.full_name} fill={COLORS[i].stroke} radius={[0, 3, 3, 0]} maxBarSize={14} />
                   ))}
                 </BarChart>
               </ResponsiveContainer>
@@ -392,7 +403,7 @@ export default function Compare() {
                       cursor={{ fill: 'var(--bg-elevated)' }}
                     />
                     {enrichedDetails.map((c, i) => (
-                      <Bar key={c.candidate_id} dataKey={`s${i}`} name={c.full_name?.split(' ')[0]} fill={COLORS[i].stroke} radius={[0, 3, 3, 0]} maxBarSize={14} />
+                      <Bar key={c.candidate_id} dataKey={`s${i}`} name={c.full_name} fill={COLORS[i].stroke} radius={[3, 3, 0, 0]} maxBarSize={32} />
                     ))}
                   </BarChart>
                 </ResponsiveContainer>
@@ -406,61 +417,63 @@ export default function Compare() {
                     textTransform: 'uppercase', color: 'var(--text-muted)', margin: 0,
                   }}>Co-author network stats</p>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                      <th style={{ padding: '9px 16px', textAlign: 'left', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Metric</th>
-                      {enrichedDetails.map((c, i) => (
-                        <th key={i} style={{ padding: '9px 16px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: COLORS[i].stroke, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                          {c.full_name?.split(' ')[0]}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      { label: 'Dominant Topic',     fn: c => c.research?.dominant_topic
-                          ? (c.research.dominant_topic.length > 18 ? c.research.dominant_topic.slice(0, 17) + '…' : c.research.dominant_topic)
-                          : '—', isText: true },
-                      { label: 'Active Domains',     fn: c => c.research?.topic_clusters?.length ?? '—' },
-                      { label: 'Unique Co-authors',  fn: c => c.research?.unique_coauthors ?? '—' },
-                      { label: 'Avg / Paper',        fn: c => c.research?.avg_coauthors_per_paper != null
-                          ? c.research.avg_coauthors_per_paper.toFixed(1) : '—' },
-                      { label: 'Recurring Collabs',  fn: c => c.research?.recurring_collaborator_count ?? '—' },
-                    ].map(({ label, fn, isText }, rowIdx) => {
-                      const vals = enrichedDetails.map(c => fn(c))
-                      const numVals = vals.map(v => parseFloat(v)).filter(v => !isNaN(v))
-                      const maxNum = numVals.length ? Math.max(...numVals) : null
-                      return (
-                        <tr key={rowIdx}
-                          style={{ borderBottom: '1px solid var(--border-subtle)', transition: 'background 0.12s' }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                          <td style={{ padding: '10px 16px', color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</td>
-                          {vals.map((val, i) => {
-                            const numVal = parseFloat(val)
-                            const isMax = !isText && maxNum !== null && numVal === maxNum && maxNum > 0
-                            return (
-                              <td key={i} style={{
-                                padding: '10px 16px',
-                                textAlign: isText ? 'left' : 'right',
-                                fontWeight: isMax ? 700 : 400,
-                                color: isMax ? COLORS[i].stroke : 'var(--text-muted)',
-                                background: isMax ? COLORS[i].bg : 'transparent',
-                                fontSize: isText ? 10 : 12,
-                                whiteSpace: isText ? 'normal' : 'nowrap',
-                                wordBreak: isText ? 'break-word' : 'normal',
-                              }}>
-                                {val}
-                                {isMax && <span style={{ marginLeft: 4, fontSize: 8, opacity: 0.7 }}>▲</span>}
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: 520, borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <th style={{ padding: '9px 16px', textAlign: 'left', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Metric</th>
+                        {enrichedDetails.map((c, i) => (
+                          <th key={i} style={{ padding: '9px 16px', textAlign: 'right', fontSize: 11, fontWeight: 700, color: COLORS[i].stroke, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                            {c.full_name}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { label: 'Dominant Topic',    fn: c => c.research?.dominant_topic ?? '—', isText: true },
+                        { label: 'Active Domains',    fn: c => c.research?.topic_clusters?.length ?? '—' },
+                        { label: 'Unique Co-authors', fn: c => c.research?.unique_coauthors ?? '—' },
+                        { label: 'Avg / Paper',       fn: c => c.research?.avg_coauthors_per_paper != null
+                            ? c.research.avg_coauthors_per_paper.toFixed(1) : '—' },
+                        { label: 'Recurring Collabs', fn: c => c.research?.recurring_collaborator_count ?? '—' },
+                      ].map(({ label, fn, isText }, rowIdx) => {
+                        const vals = enrichedDetails.map(c => fn(c))
+                        const numVals = vals.map(v => parseFloat(v)).filter(v => !isNaN(v))
+                        const maxNum = numVals.length ? Math.max(...numVals) : null
+                        return (
+                          <tr key={rowIdx}
+                            style={{ borderBottom: '1px solid var(--border-subtle)', transition: 'background 0.12s' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <td style={{ padding: '10px 16px', color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</td>
+                            {vals.map((val, i) => {
+                              const numVal = parseFloat(val)
+                              const isMax = !isText && maxNum !== null && numVal === maxNum && maxNum > 0
+                              return (
+                                <td key={i} style={{
+                                  padding: '12px 16px',
+                                  textAlign: isText ? 'left' : 'right',
+                                  fontWeight: isMax ? 700 : 400,
+                                  color: isMax ? COLORS[i].stroke : 'var(--text-muted)',
+                                  background: isMax ? COLORS[i].bg : 'transparent',
+                                  fontSize: isText ? 11 : 12,
+                                  whiteSpace: 'normal',
+                                  wordBreak: 'break-word',
+                                  lineHeight: 1.5,
+                                  verticalAlign: 'top',
+                                }}>
+                                  {val}
+                                  {isMax && <span style={{ marginLeft: 4, fontSize: 8, opacity: 0.7 }}>▲</span>}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
             </div>
@@ -576,7 +589,7 @@ export default function Compare() {
                       fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
                       letterSpacing: '0.06em', color: COLORS[i].stroke,
                     }}>
-                      {c.full_name?.split(' ')[0]}
+                      {c.full_name}
                     </th>
                   ))}
                 </tr>
@@ -625,9 +638,7 @@ export default function Compare() {
                     {[
                       {
                         label: 'Dominant Topic',
-                        fn: c => c.research?.dominant_topic
-                          ? (c.research.dominant_topic.length > 20 ? c.research.dominant_topic.slice(0, 19) + '…' : c.research.dominant_topic)
-                          : null,
+                          fn: c => c.research?.dominant_topic || null,
                         isText: true,
                       },
                       {

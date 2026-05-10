@@ -84,6 +84,7 @@ class DegreeRecord(BaseModel):
     end_year: Optional[int] = None
     is_ongoing: bool = False
     qs_rank: Optional[int] = None
+    qs_rank_label: Optional[str] = None
     the_rank: Optional[int] = None
     qs_subject_rank: Optional[int] = None
     hec_recognized: Optional[bool] = None
@@ -120,6 +121,10 @@ class DegreeRecord(BaseModel):
     @field_validator("start_year", "end_year", "qs_rank", "the_rank", "qs_subject_rank", mode="before")
     @classmethod
     def coerce_ints(cls, v): return _null_int(v)
+
+    @field_validator("qs_rank_label", mode="before")
+    @classmethod
+    def coerce_rank_label(cls, v): return _null_str(v)
 
     @field_validator("is_ongoing", mode="before")
     @classmethod

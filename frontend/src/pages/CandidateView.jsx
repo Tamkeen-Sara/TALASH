@@ -382,12 +382,26 @@ export default function CandidateView() {
 
       {/* â•â•â•â• OVERVIEW â•â•â•â• */}
       {tab === 'overview' && (
-        <div className="fade-up" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          <div className="card" style={{ padding: '22px 24px' }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 18 }}>
-              Score Radar
-            </h3>
-            <ScoreRadar candidate={candidate} />
+        <div className="fade-up" style={{ display: 'grid', gridTemplateColumns: '0.92fr 1.08fr', gap: 20, alignItems: 'start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="card" style={{ padding: '22px 24px' }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 18 }}>
+                Score Radar
+              </h3>
+              <ScoreRadar candidate={candidate} />
+            </div>
+
+            {/* Research Trajectory - moved below radar on left */}
+            {candidate.research_trajectory && (
+              <div className="card" style={{ padding: '18px 22px', border: '1px solid rgba(149,128,255,0.18)' }}>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--violet)', marginBottom: 10 }}>
+                  Research Trajectory
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                  {candidate.research_trajectory}
+                </p>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -470,18 +484,6 @@ export default function CandidateView() {
                 </div>
                 <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
                   Completeness · Verifiability · Integrity
-                </p>
-              </div>
-            )}
-
-            {/* Research Trajectory */}
-            {candidate.research_trajectory && (
-              <div className="card" style={{ padding: '18px 22px', border: '1px solid rgba(149,128,255,0.18)' }}>
-                <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--violet)', marginBottom: 10 }}>
-                  Research Trajectory
-                </h3>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                  {candidate.research_trajectory}
                 </p>
               </div>
             )}

@@ -1,4 +1,4 @@
-﻿function QsRankBadge({ rank, recognized, qualityTier, qualityBand }) {
+﻿function QsRankBadge({ rank, rankLabel, recognized, qualityTier, qualityBand }) {
   // QS rank takes priority if available
   if (rank) {
     const [bg, color, border] =
@@ -11,7 +11,7 @@
         display: 'inline-block', padding: '2px 8px', borderRadius: 9999,
         fontSize: 11, fontWeight: 600, background: bg, color, border: `1px solid ${border}`,
       }} title={qualityBand || ''}>
-        QS #{rank}
+        QS {rankLabel || `#${rank}`}
       </span>
     )
   }
@@ -31,7 +31,7 @@
         display: 'inline-block', padding: '2px 8px', borderRadius: 9999,
         fontSize: 11, fontWeight: 600, background: bg, color, border: `1px solid ${border}`,
       }} title={qualityBand || qualityTier}>
-        {qualityBand || qualityTier}
+        OpenAlex {qualityTier}
       </span>
     )
   }
@@ -205,6 +205,7 @@ export default function EducationTab({ candidate }) {
                     <td style={{ padding: '14px 20px' }}>
                       <QsRankBadge
                         rank={d.qs_rank || d.the_rank}
+                        rankLabel={d.qs_rank_label}
                         recognized={d.hec_recognized}
                         qualityTier={d.quality_tier}
                         qualityBand={d.quality_band}

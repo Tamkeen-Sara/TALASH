@@ -35,7 +35,8 @@ _ROR_API      = "https://api.ror.org/organizations"
 _OPENALEX_ROR = "https://api.openalex.org/institutions?filter=ror:{ror_id}&mailto={mailto}"
 _OPENALEX_NAME= "https://api.openalex.org/institutions?search={name}&mailto={mailto}&per_page=1"
 
-_qs_cache: dict[str, int] = {}       # canonical_name → qs_rank
+_qs_cache: dict[str, dict] = {}      # canonical_name → all QS fields
+_qs_aliases: dict[str, str] = {}     # normalized alias → canonical QS name
 _db_cache: dict[str, dict] = {}      # institution name → full result (in-process cache)
 
 
@@ -108,11 +109,80 @@ def _parse_rank(val) -> int | None:
     return None
 
 
+def _parse_rank_label(val) -> str | None:
+    if val is None or val == "":
+        return None
+    if isinstance(val, (int, float)):
+        v = int(val)
+        return str(v) if v > 0 else None
+    text = str(val).strip().lstrip("=#▲▼ ")
+    return text or None
+
+
 def _parse_float(val: str) -> float | None:
     try:
         return float(str(val).strip()) if val and str(val).strip() else None
     except (ValueError, TypeError):
         return None
+
+
+def _normalize_country(value: str) -> str:
+    return _normalize_alias(value)
+
+
+def _country_matches(qs_country: str | None, expected_country: str | None) -> bool:
+    if not expected_country:
+        return True
+    if not qs_country:
+        return False
+
+    qs_norm = _normalize_country(qs_country)
+    exp_norm = _normalize_country(expected_country)
+    if not qs_norm or not exp_norm:
+        return False
+
+    return qs_norm == exp_norm or qs_norm in exp_norm or exp_norm in qs_norm
+
+
+def _normalize_alias(value: str) -> str:
+    return "".join(ch for ch in str(value).upper() if ch.isalnum())
+
+
+def _alias_candidates(name: str) -> set[str]:
+    import re
+
+    aliases: set[str] = set()
+    if not name:
+        return aliases
+
+    stripped = str(name).strip()
+    normalized = _normalize_alias(stripped)
+    if normalized:
+        aliases.add(normalized)
+
+    # Parenthetical acronyms are the strongest explicit aliases in QS names.
+    for match in re.findall(r"\(([^)]+)\)", stripped):
+        compact = _normalize_alias(match)
+        if 2 <= len(compact) <= 12:
+            aliases.add(compact)
+
+    words = [w for w in re.split(r"[^A-Za-z0-9]+", stripped) if w]
+
+    # Any short all-caps token in the name is a likely explicit alias,
+    # e.g. "FAST" or "NUST" when the QS row includes it in parentheses.
+    for token in words:
+        if token.upper() == token and 2 <= len(token) <= 12:
+            aliases.add(_normalize_alias(token))
+
+    return aliases
+
+
+def _register_qs_aliases(name: str):
+    canonical = str(name or "").strip()
+    if not canonical:
+        return
+    for alias in _alias_candidates(canonical):
+        _qs_aliases.setdefault(alias, canonical)
 
 
 # Column name aliases — QS uses different column names across years
@@ -150,7 +220,7 @@ def _find_col(headers: list[str], aliases: list[str]) -> str | None:
 
 def _load_qs_data():
     """Load QS data from CSV (all columns) or fall back to seed data."""
-    global _qs_cache
+    global _qs_cache, _qs_aliases
     if _qs_cache:
         return
 
@@ -189,7 +259,20 @@ def _load_qs_data():
                     headers = [h if h else f"_col{i}" for i, h in enumerate(headers)]
 
                     data_rows = []
-                    for row in rows_raw[header_idx + 1:]:
+                    # Skip sub-header rows (QS Excel has Row 1: category names, Row 2: metric names like "AR SCORE", "CPF RANK")
+                    # Find the first row that doesn't look like a sub-header (not mostly "SCORE"/"RANK" keywords)
+                    start_idx = header_idx + 1
+                    while start_idx < len(rows_raw):
+                        row_cells = [str(c or "").strip().upper() for c in rows_raw[start_idx]]
+                        # Count how many cells contain "SCORE" or "RANK" (sub-header marker)
+                        sub_header_count = sum(1 for c in row_cells if "SCORE" in c or "RANK" in c)
+                        # If >= 3 cells are sub-header markers, skip this row
+                        if sub_header_count >= 3:
+                            start_idx += 1
+                        else:
+                            break
+                    
+                    for row in rows_raw[start_idx:]:
                         # Keep raw values (int/float) so _parse_rank handles them correctly.
                         # Only stringify None → empty string for string fields.
                         cells = [c if c is not None else "" for c in row]
@@ -208,29 +291,35 @@ def _load_qs_data():
             if data_rows:
                 headers = list(data_rows[0].keys())
                 print(f"[university_verifier] Excel headers ({len(headers)}): "
-                      f"{[h for h in headers if h and not h.startswith('_col')]}")
-                col_name  = _find_col(headers, _COL_ALIASES["name"])
-                col_rank  = _find_col(headers, _COL_ALIASES["qs_rank"])
-                col_over  = _find_col(headers, _COL_ALIASES["overall"])
-                col_ar    = _find_col(headers, _COL_ALIASES["academic_reputation"])
-                col_cpf   = _find_col(headers, _COL_ALIASES["citations_per_faculty"])
+                    f"{[h for h in headers if h and not h.startswith('_col')]}")
+                col_name = _find_col(headers, _COL_ALIASES["name"])
+                col_rank = _find_col(headers, _COL_ALIASES["qs_rank"])
+                col_over = _find_col(headers, _COL_ALIASES["overall"])
+                col_country = _find_col(headers, ["Location", "Country/Territory", "Country", "Country Territory"])
+                col_ar = _find_col(headers, _COL_ALIASES["academic_reputation"])
+                col_cpf = _find_col(headers, _COL_ALIASES["citations_per_faculty"])
                 print(f"[university_verifier] Detected columns — name:{col_name!r} "
-                      f"rank:{col_rank!r} overall:{col_over!r} "
-                      f"acad_rep:{col_ar!r} cit_fac:{col_cpf!r}")
+                    f"rank:{col_rank!r} overall:{col_over!r} country:{col_country!r} "
+                    f"acad_rep:{col_ar!r} cit_fac:{col_cpf!r}")
 
                 loaded = 0
                 for row in data_rows:
                     name = (row.get(col_name) or "").strip() if col_name else ""
-                    rank = _parse_rank(row.get(col_rank, "")) if col_rank else None
+                    rank_raw = row.get(col_rank, "") if col_rank else None
+                    rank = _parse_rank(rank_raw) if col_rank else None
                     if not name or not rank:
                         continue
                     _qs_cache[name] = {
                         "qs_rank":                rank,
+                        "qs_rank_label":          _parse_rank_label(rank_raw),
                         "overall":                _parse_float(row.get(col_over))  if col_over else None,
+                        "country":                (row.get(col_country) or "").strip() if col_country else None,
                         "academic_reputation":    _parse_float(row.get(col_ar))    if col_ar   else None,
                         "citations_per_faculty":  _parse_float(row.get(col_cpf))   if col_cpf  else None,
                     }
+                    _register_qs_aliases(name)
                     loaded += 1
+                print(f"[university_verifier] Built {len(_qs_aliases)} QS aliases from loaded institutions")
                 print(f"[university_verifier] Loaded {loaded} universities from {csv_path.name}")
                 return
         except Exception as e:
@@ -277,11 +366,14 @@ def _load_qs_data():
     ]
     for name, rank in seed:
         _qs_cache[name] = {"qs_rank": rank, "overall": None,
+                           "country": None,
+                           "qs_rank_label": str(rank),
                            "academic_reputation": None, "citations_per_faculty": None}
+        _register_qs_aliases(name)
     print(f"[university_verifier] Using seed data: {len(_qs_cache)} universities.")
 
 
-def _qs_lookup(canonical_name: str) -> dict:
+def _qs_lookup(canonical_name: str, country: str | None = None) -> dict:
     """
     Match a canonical institution name against the QS dataset.
 
@@ -306,7 +398,25 @@ def _qs_lookup(canonical_name: str) -> dict:
     if not _qs_cache:
         return {}
 
-    names  = list(_qs_cache.keys())
+    normalized_input = _normalize_alias(canonical_name)
+    if normalized_input and normalized_input in _qs_aliases:
+        matched_name = _qs_aliases[normalized_input]
+        data = _qs_cache.get(matched_name)
+        if data and _country_matches(data.get("country"), country):
+            print(f"[QS] '{canonical_name}' → alias match '{matched_name}' rank={data.get('qs_rank')}")
+            return data
+
+    for alias in _alias_candidates(canonical_name):
+        matched_name = _qs_aliases.get(alias)
+        if matched_name:
+            data = _qs_cache.get(matched_name)
+            if data and _country_matches(data.get("country"), country):
+                print(f"[QS] '{canonical_name}' → alias match '{matched_name}' rank={data.get('qs_rank')}")
+                return data
+
+    names  = [name for name, data in _qs_cache.items() if _country_matches(data.get("country"), country)]
+    if not names:
+        names = list(_qs_cache.keys())
     result = process.extractOne(
         canonical_name, names,
         scorer=fuzz.WRatio,
@@ -548,9 +658,10 @@ async def lookup_university(name: str) -> dict:
         cached_clean = _db_get(cleaned)
         if cached_clean:
             canonical = cached_clean.get("canonical_name") or cleaned
-            qs_data = _qs_lookup(canonical)
+            qs_data = _qs_lookup(canonical, country=cached_clean.get("country"))
             if qs_data:
                 cached_clean["qs_rank"]                  = qs_data.get("qs_rank")
+                cached_clean["qs_rank_label"]            = qs_data.get("qs_rank_label")
                 cached_clean["qs_overall_score"]         = qs_data.get("overall")
                 cached_clean["qs_academic_reputation"]   = qs_data.get("academic_reputation")
                 cached_clean["qs_citations_per_faculty"] = qs_data.get("citations_per_faculty")
@@ -574,9 +685,10 @@ async def lookup_university(name: str) -> dict:
             pass  # fall through to fresh API lookup below
         else:
             canonical = cached.get("canonical_name") or name
-            qs_data = _qs_lookup(canonical)
+            qs_data = _qs_lookup(canonical, country=cached.get("country"))
             if qs_data:
                 cached["qs_rank"]                  = qs_data.get("qs_rank")
+                cached["qs_rank_label"]            = qs_data.get("qs_rank_label")
                 cached["qs_overall_score"]         = qs_data.get("overall")
                 cached["qs_academic_reputation"]   = qs_data.get("academic_reputation")
                 cached["qs_citations_per_faculty"] = qs_data.get("citations_per_faculty")
@@ -632,9 +744,10 @@ async def lookup_university(name: str) -> dict:
         result.update(tier)
 
     # Step 3: QS data — rank + additional scores if available
-    qs_data = _qs_lookup(canonical)
+    qs_data = _qs_lookup(canonical, country=result.get("country"))
     if qs_data:
         result["qs_rank"]                  = qs_data.get("qs_rank")
+        result["qs_rank_label"]            = qs_data.get("qs_rank_label")
         result["qs_overall_score"]         = qs_data.get("overall")
         result["qs_academic_reputation"]   = qs_data.get("academic_reputation")
         result["qs_citations_per_faculty"] = qs_data.get("citations_per_faculty")
@@ -685,6 +798,7 @@ async def enrich_degrees(degrees: list[DegreeRecord]) -> list[DegreeRecord]:
         key = _clean_institution_name(degree.institution)
         res = results_map.get(key, {})
         degree.qs_rank                   = res.get("qs_rank")
+        degree.qs_rank_label             = res.get("qs_rank_label")
         degree.the_rank                  = res.get("the_rank")
         degree.hec_recognized            = res.get("recognized", False)
         degree.quality_tier              = res.get("quality_tier")

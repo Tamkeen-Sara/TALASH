@@ -11,6 +11,94 @@ from backend.config import settings
 from backend.utils.groq_client import groq_chat
 
 
+def _fallback_candidate_summary(candidate: CandidateProfile) -> dict:
+    edu = candidate.education
+    res = candidate.research
+    emp = candidate.employment
+
+    score_total = candidate.score_total or 0
+    paper_count = len(res.journal_papers or []) + len(res.conference_papers or [])
+    degree_count = len(edu.degrees or [])
+    h_index = res.h_index or 0
+    recommendations = (
+        "Strong" if score_total >= 75 or (paper_count >= 5 and h_index >= 10)
+        else "Conditional" if score_total >= 50 or paper_count >= 2
+        else "Weak"
+    )
+
+    strengths = []
+    if paper_count:
+        strengths.append(f"Has {paper_count} verified publication{'s' if paper_count != 1 else ''}.")
+    if h_index:
+        strengths.append(f"Research impact is measurable with an H-index of {h_index}.")
+    if degree_count:
+        strengths.append(f"Education profile includes {degree_count} degree{'s' if degree_count != 1 else ''}.")
+    if emp.records:
+        strengths.append(f"Employment history includes {len(emp.records)} role{'s' if len(emp.records) != 1 else ''}.")
+
+    if not strengths:
+        strengths = ["Profile parsed successfully and can be reviewed further."]
+
+    concerns = []
+    if not paper_count:
+        concerns.append("No verified publications were extracted from the CV.")
+    if not (candidate.email or candidate.phone):
+        concerns.append("Contact information is incomplete.")
+    if not emp.records:
+        concerns.append("Employment history is sparse or missing.")
+    if not edu.degrees:
+        concerns.append("Education details are limited.")
+
+    if not concerns:
+        concerns = ["No major structural issues detected in the parsed profile."]
+
+    justification = (
+        f"This candidate presents a {recommendations.lower()} profile with {paper_count} publication"
+        f"{'s' if paper_count != 1 else ''} and a total score of {score_total:.1f}/100. "
+        f"The record suggests a {('well-verified' if h_index or paper_count else 'partially parsed')} academic profile that can be reviewed further."
+    )
+
+    return {
+        "recommendation": recommendations,
+        "strengths": strengths[:3],
+        "concerns": concerns[:2],
+        "justification": justification,
+    }
+
+
+def _fallback_research_trajectory(candidate: CandidateProfile) -> str:
+    res = candidate.research
+    clusters = res.topic_clusters or []
+    trend = res.topic_trend or []
+    total_pubs = len(res.journal_papers or []) + len(res.conference_papers or [])
+    dominant = res.dominant_topic or (clusters[0]["domain"] if clusters else None)
+    diversity = res.topic_diversity_score
+
+    if clusters:
+        lead = clusters[0]
+        if trend:
+            last = trend[-1]
+            return (
+                f"The publication record suggests continued growth in {dominant or lead['domain']}, "
+                f"with the strongest cluster centered on {lead['domain']} and a measured shift toward "
+                f"{last['dominant_domain']} in the latest window. With {total_pubs} publications and an H-index of {res.h_index or 0}, "
+                f"the researcher is likely to keep working on technically specific problems in this area, especially where the current themes overlap with applied systems or methods."
+            )
+        return (
+            f"The researcher appears to be consolidating work around {dominant or lead['domain']}. "
+            f"The portfolio is led by {lead['domain']} and shows {diversity if diversity is not None else 'moderate'} topical breadth across {len(clusters)} themes. "
+            f"With {total_pubs} publications, the next stage is likely to stay within the same research lane while extending the methods into adjacent application domains."
+        )
+
+    if total_pubs:
+        return (
+            f"The publication record indicates an emerging research profile with {total_pubs} papers, but the topic clustering signal is too sparse for a fine-grained prediction. "
+            f"The trajectory is most likely to consolidate around the candidate's established publication areas as more papers are added."
+        )
+
+    return "No research trajectory could be inferred because no publication record was available."
+
+
 async def draft_missing_info_email(candidate: CandidateProfile) -> str:
     if not candidate.missing_info:
         return ""
@@ -109,13 +197,9 @@ Only return valid JSON, no other text."""
             "concerns":        data.get("concerns", []),
             "justification":   data.get("justification", ""),
         }
-    except Exception:
-        return {
-            "recommendation": "Conditional",
-            "strengths": [],
-            "concerns": [],
-            "justification": "",
-        }
+    except Exception as e:
+        print(f"[candidate_summary] Falling back for {candidate.full_name}: {e}")
+        return _fallback_candidate_summary(candidate)
 
 
 # ── CV Quality Score (formula — no LLM) ──────────────────────────────────────
@@ -281,7 +365,7 @@ async def generate_research_trajectory(candidate: CandidateProfile) -> str:
     trend    = res.topic_trend    or []
 
     if not clusters:
-        return ""
+        return _fallback_research_trajectory(candidate)
 
     theme_lines = "\n".join(
         f"  {c['domain']} — {c['count']} papers ({c['percentage']}%)"
@@ -296,7 +380,7 @@ async def generate_research_trajectory(candidate: CandidateProfile) -> str:
 
 Researcher: {candidate.full_name}
 Dominant Research Area: {res.dominant_topic or 'Unknown'}
-Research Diversity Score: {res.topic_diversity_score:.2f if res.topic_diversity_score is not None else 'N/A'} (0=deep specialist, 1=broad generalist)
+Research Diversity Score: {('N/A' if res.topic_diversity_score is None else f'{res.topic_diversity_score:.2f}')} (0=deep specialist, 1=broad generalist)
 H-Index: {res.h_index or 0} | Total Publications: {len(res.journal_papers or []) + len(res.conference_papers or [])}
 
 Publication Theme Distribution:
@@ -319,7 +403,7 @@ Base it strictly on the trajectory shown above. Third person. No bullet points. 
         return response.choices[0].message.content.strip()
     except Exception as e:
         print(f"[research_trajectory] Failed for {candidate.full_name}: {e}")
-        return ""
+        return _fallback_research_trajectory(candidate)
 
 
 # ── Comparison Narrative ──────────────────────────────────────────────────────

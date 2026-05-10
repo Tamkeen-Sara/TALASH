@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     ttl_citation_counts: int = 14
     ttl_patent_data: int = 90
 
+    # Research scoring policy
+    # If True, Q3 journal points are only counted when the paper is confirmed
+    # indexed in Scopus or WoS. Set to False (default) to count Q3 papers
+    # even when indexing flags are missing (useful for journals lacking badges).
+    research_q3_require_indexed: bool = False
     # Database
     db_path: str = "data/cache.db"
     candidates_db_path: str = "data/candidates.db"

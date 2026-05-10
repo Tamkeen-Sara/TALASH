@@ -109,12 +109,36 @@ async def _re_enrich_all_candidates():
     updated = 0
     for cid, candidate in list(_candidates.items()):
         try:
-            if not (candidate.education and candidate.education.degrees):
-                continue
-            candidate.education = await run_education_agent(
-                candidate.education, candidate.employment
-            )
-            candidate.score_education = candidate.education.education_score
+            if candidate.education and candidate.education.degrees:
+                candidate.education = await run_education_agent(
+                    candidate.education, candidate.employment
+                )
+                candidate.score_education = candidate.education.education_score
+
+            # Backfill the two newer cards for candidates that were stored before
+            # these fields existed in the persisted schema.
+            try:
+                candidate.cv_quality_score = compute_cv_quality_score(candidate)
+            except Exception as e:
+                print(f"[startup] CV quality score failed for '{getattr(candidate, 'full_name', cid)}': {e}")
+
+            try:
+                trajectory = await generate_research_trajectory(candidate)
+                candidate.research_trajectory = trajectory or "No topic trajectory available yet."
+            except Exception as e:
+                print(f"[startup] Research trajectory failed for '{getattr(candidate, 'full_name', cid)}': {e}")
+                candidate.research_trajectory = "No topic trajectory available yet."
+
+            if not (candidate.recommendation and candidate.key_strengths and candidate.key_concerns and candidate.score_justification):
+                try:
+                    summary = await generate_candidate_summary(candidate)
+                    candidate.recommendation = summary.get("recommendation")
+                    candidate.key_strengths = summary.get("strengths", [])
+                    candidate.key_concerns = summary.get("concerns", [])
+                    candidate.score_justification = summary.get("justification", "")
+                except Exception as e:
+                    print(f"[startup] Summary backfill failed for '{getattr(candidate, 'full_name', cid)}': {e}")
+
             candidate.score_total = compute_total_score(
                 candidate.score_education, candidate.score_research,
                 candidate.score_employment, candidate.score_skills,
